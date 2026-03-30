@@ -1,0 +1,5 @@
+build/
+tictac_db/
+*.dat
+*.idx
+compile_commands.json

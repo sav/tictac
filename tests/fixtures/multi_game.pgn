@@ -1,0 +1,26 @@
+[Event "Game 1"]
+[Site "Test"]
+[Date "2024.01.01"]
+[White "Alpha"]
+[Black "Beta"]
+[Result "1-0"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 1-0
+
+[Event "Game 2"]
+[Site "Test"]
+[Date "2024.01.02"]
+[White "Gamma"]
+[Black "Delta"]
+[Result "0-1"]
+
+1. d4 d5 2. c4 e6 3. Nc3 Nf6 0-1
+
+[Event "Game 3"]
+[Site "Test"]
+[Date "2024.01.03"]
+[White "Epsilon"]
+[Black "Zeta"]
+[Result "1/2-1/2"]
+
+1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 1/2-1/2
