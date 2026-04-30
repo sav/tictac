@@ -9,14 +9,20 @@ struct lua_State;
 
 namespace tictac {
 
+class EngineInterface;
+
 /// Loads a Lua plugin script and dispatches game records to its `on_match`.
 ///
 /// The script must define a global function `on_match(game)`. The function
 /// is called once per candidate match. A truthy return value causes the
 /// candidate to be retained in the result set; falsy values discard it.
+///
+/// When constructed with a non-null `engine`, the script also gets a global
+/// `tictac.engine` table with `analyze(opts)` and `set_option(name, value)`.
 class LuaPlugin {
 public:
-    explicit LuaPlugin(const std::filesystem::path& script);
+    explicit LuaPlugin(const std::filesystem::path& script,
+                       EngineInterface* engine = nullptr);
     ~LuaPlugin();
 
     LuaPlugin(const LuaPlugin&) = delete;

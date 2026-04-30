@@ -5,6 +5,7 @@
 #include <fstream>
 #include <memory>
 
+#include "engine/uci_engine.hpp"
 #include "import/import_pipeline.hpp"
 #include "plugin/lua_plugin.hpp"
 #include "search/search_engine.hpp"
@@ -14,6 +15,31 @@
 #include "storage/sequence_index.hpp"
 
 namespace tictac {
+
+namespace {
+
+/// Spin up a UCI engine and apply NAME=VALUE options. Returns nullptr on
+/// failure, after writing a diagnostic to stderr.
+std::unique_ptr<UciEngine>
+make_engine(const std::filesystem::path& path,
+            const std::vector<std::string>& options) {
+    auto eng = std::make_unique<UciEngine>();
+    if (!eng->start(path)) {
+        std::cerr << "failed to start UCI engine: " << path << "\n";
+        return nullptr;
+    }
+    for (const auto& opt : options) {
+        auto eq = opt.find('=');
+        if (eq == std::string::npos) {
+            std::cerr << "bad --engine-option (expected NAME=VALUE): " << opt << "\n";
+            return nullptr;
+        }
+        eng->set_option(opt.substr(0, eq), opt.substr(eq + 1));
+    }
+    return eng;
+}
+
+} // namespace
 
 int CliApp::run(int argc, char* argv[]) {
     CLI::App app{"tictac - Chess PGN Database Analyzer"};
@@ -37,10 +63,15 @@ int CliApp::run(int argc, char* argv[]) {
     std::string search_fen;
     std::size_t search_limit = 20;
     std::string search_plugin;
+    std::string search_engine;
+    std::vector<std::string> search_engine_options;
     search_pos->add_option("fen", search_fen, "FEN string")->required();
     search_pos->add_option("--db", db_path_str, "Database path")->default_val("tictac_db");
     search_pos->add_option("--limit", search_limit, "Maximum results")->default_val(20);
     search_pos->add_option("--plugin", search_plugin, "Lua plugin script (.lua) to filter results");
+    search_pos->add_option("--engine", search_engine, "UCI engine binary (e.g. stockfish)");
+    search_pos->add_option("--engine-option", search_engine_options,
+                           "UCI option NAME=VALUE (repeatable)");
 
     // Search opening subcommand
     auto* search_open = search_cmd->add_subcommand("opening", "Search by opening moves (SAN)");
@@ -49,6 +80,9 @@ int CliApp::run(int argc, char* argv[]) {
     search_open->add_option("--db", db_path_str, "Database path")->default_val("tictac_db");
     search_open->add_option("--limit", search_limit, "Maximum results")->default_val(20);
     search_open->add_option("--plugin", search_plugin, "Lua plugin script (.lua) to filter results");
+    search_open->add_option("--engine", search_engine, "UCI engine binary (e.g. stockfish)");
+    search_open->add_option("--engine-option", search_engine_options,
+                            "UCI option NAME=VALUE (repeatable)");
 
     // Stats subcommand
     auto* stats_cmd = app.add_subcommand("stats", "Show database statistics");
@@ -66,10 +100,12 @@ int CliApp::run(int argc, char* argv[]) {
         return cmd_import(import_input, db_path, import_threads);
     }
     if (search_pos->parsed()) {
-        return cmd_search_position(search_fen, db_path, search_limit, search_plugin);
+        return cmd_search_position(search_fen, db_path, search_limit, search_plugin,
+                                   search_engine, search_engine_options);
     }
     if (search_open->parsed()) {
-        return cmd_search_opening(search_moves, db_path, search_limit, search_plugin);
+        return cmd_search_opening(search_moves, db_path, search_limit, search_plugin,
+                                  search_engine, search_engine_options);
     }
     if (stats_cmd->parsed()) {
         return cmd_stats(db_path);
@@ -128,7 +164,9 @@ int CliApp::cmd_import(const std::filesystem::path& input,
 int CliApp::cmd_search_position(const std::string& fen,
                                 const std::filesystem::path& db_path,
                                 std::size_t limit,
-                                const std::filesystem::path& plugin_path) {
+                                const std::filesystem::path& plugin_path,
+                                const std::filesystem::path& engine_path,
+                                const std::vector<std::string>& engine_options) {
     GameStore store(db_path);
     PositionIndex pos_idx(db_path);
     SequenceIndex seq_idx(db_path);
@@ -136,11 +174,17 @@ int CliApp::cmd_search_position(const std::string& fen,
 
     SearchEngine engine(store, pos_idx, seq_idx);
 
+    std::unique_ptr<UciEngine> uci;
+    if (!engine_path.empty()) {
+        uci = make_engine(engine_path, engine_options);
+        if (!uci) return 2;
+    }
+
     std::unique_ptr<LuaPlugin> plugin;
     GameFilter filter;
     if (!plugin_path.empty()) {
         try {
-            plugin = std::make_unique<LuaPlugin>(plugin_path);
+            plugin = std::make_unique<LuaPlugin>(plugin_path, uci.get());
         } catch (const std::exception& e) {
             std::cerr << e.what() << "\n";
             return 2;
@@ -178,7 +222,9 @@ int CliApp::cmd_search_position(const std::string& fen,
 int CliApp::cmd_search_opening(const std::vector<std::string>& moves,
                                const std::filesystem::path& db_path,
                                std::size_t limit,
-                               const std::filesystem::path& plugin_path) {
+                               const std::filesystem::path& plugin_path,
+                               const std::filesystem::path& engine_path,
+                               const std::vector<std::string>& engine_options) {
     GameStore store(db_path);
     PositionIndex pos_idx(db_path);
     SequenceIndex seq_idx(db_path);
@@ -186,11 +232,17 @@ int CliApp::cmd_search_opening(const std::vector<std::string>& moves,
 
     SearchEngine engine(store, pos_idx, seq_idx);
 
+    std::unique_ptr<UciEngine> uci;
+    if (!engine_path.empty()) {
+        uci = make_engine(engine_path, engine_options);
+        if (!uci) return 2;
+    }
+
     std::unique_ptr<LuaPlugin> plugin;
     GameFilter filter;
     if (!plugin_path.empty()) {
         try {
-            plugin = std::make_unique<LuaPlugin>(plugin_path);
+            plugin = std::make_unique<LuaPlugin>(plugin_path, uci.get());
         } catch (const std::exception& e) {
             std::cerr << e.what() << "\n";
             return 2;

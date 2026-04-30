@@ -10,6 +10,7 @@ add_library(tictac_lib STATIC
     storage/position_index.cpp
     storage/sequence_index.cpp
     search/search_engine.cpp
+    engine/uci_engine.cpp
     plugin/lua_plugin.cpp
     cli/cli_app.cpp
 )

@@ -213,6 +213,70 @@ Sample plugins live under `examples/plugins/`:
 - `elite.lua` — keep games where both sides are >= 2400.
 - `short_decisive.lua` — print custom info for every short, decisive game and
   iterate the opening moves with `game:moves()`.
+- `engine_eval.lua` — evaluate the final position with a UCI engine and keep
+  balanced endings (requires `--engine`).
+
+### `--engine` — UCI engine integration
+
+`search position` and `search opening` accept `--engine <path>` to start a
+UCI engine subprocess (Stockfish or any UCI-compatible binary). UCI options
+are configured with `--engine-option NAME=VALUE` (repeatable). The engine is
+exposed to the loaded Lua plugin as the global `tictac.engine` table.
+
+```sh
+tictac search opening e4 c5 \
+  --plugin examples/plugins/engine_eval.lua \
+  --engine /usr/games/stockfish \
+  --engine-option Threads=1 \
+  --engine-option Hash=64 \
+  --limit 5
+```
+
+#### Engine API (Lua)
+
+```lua
+-- Analyze a position. Either opts.fen or opts.moves must be provided;
+-- opts.moves is a list of UCI moves applied from the starting position.
+local res = tictac.engine.analyze({
+    fen      = "...",        -- optional; full FEN
+    moves    = { "e2e4", "e7e5", ... },  -- optional; UCI moves from startpos
+    depth    = 12,           -- optional; UCI `go depth` (default 10 if no movetime)
+    movetime = 250,          -- optional; UCI `go movetime` in ms
+    multipv  = 1,            -- optional; UCI MultiPV (default 1)
+})
+
+-- res.lines = { line, line, ... }  -- one entry per multipv slot, sorted by index
+-- each line:
+--   line.score    cp value (centipawns, from side-to-move's POV) | absent if mate
+--   line.mate     mate-in-N (positive = mate FOR side to move)   | absent if cp
+--   line.depth    nominal search depth
+--   line.seldepth selective max depth
+--   line.nodes    nodes searched for this line
+--   line.pv       table of UCI moves
+--
+-- Convenience: res.score / res.mate / res.depth / res.pv mirror res.lines[1].
+-- res.time_ms wall time consumed by analyze().
+-- res.nodes total nodes across all PVs.
+
+-- Set a UCI option at any point.
+tictac.engine.set_option("Hash", "256")
+```
+
+Notes:
+
+- The engine is started once at search startup and shut down after the run.
+  Each `analyze()` call is **synchronous and blocking** — `position` + `go`
+  are sent and the function returns when `bestmove` arrives. Keep `depth` /
+  `movetime` modest if your filter scans many candidates.
+- UCI scores are reported **from the side-to-move's perspective**, not
+  white's, per UCI convention. Negate when the side to move is Black if you
+  want a white-relative number.
+- `tictac.engine` is only registered when `--engine` is supplied. Plugins
+  that need the engine should bail early, e.g. `if not tictac or not
+  tictac.engine then error("requires --engine") end`.
+- The plugin host catches exceptions from the engine (dead subprocess,
+  parse errors) and surfaces them as Lua errors that abort the search with
+  exit status 2.
 
 ### `stats` — summarize a database
 
@@ -275,7 +339,7 @@ src/
               mmap_file, db_manifest
   search/     SearchEngine (position + opening queries)
   plugin/     LuaPlugin -- loads .lua filters for `search --plugin`
-  engine/     Engine analysis interface (placeholder)
+  engine/     EngineInterface + UciEngine -- UCI subprocess wrapper
   main.cpp    Thin entry point — instantiates CliApp
 tests/        Catch2 tests + PGN fixtures
 bench/        Benchmarks (off by default)

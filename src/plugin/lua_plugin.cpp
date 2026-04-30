@@ -1,8 +1,10 @@
 #include "plugin/lua_plugin.hpp"
 
+#include <chrono>
 #include <new>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 extern "C" {
 #include "lua.h"
@@ -11,6 +13,7 @@ extern "C" {
 }
 
 #include "chess.hpp"
+#include "engine/engine_interface.hpp"
 
 namespace tictac {
 
@@ -144,12 +147,165 @@ void push_game_table(lua_State* L, const GameRecord& game,
     lua_setfield(L, -2, "moves");
 }
 
+int l_engine_analyze(lua_State* L) {
+    auto* engine = static_cast<EngineInterface*>(
+        lua_touserdata(L, lua_upvalueindex(1)));
+    if (!engine || !engine->is_running()) {
+        return luaL_error(L, "tictac.engine: not running");
+    }
+
+    luaL_checktype(L, 1, LUA_TTABLE);
+
+    std::string fen;
+    bool have_fen = false;
+    lua_getfield(L, 1, "fen");
+    if (lua_isstring(L, -1)) {
+        fen = lua_tostring(L, -1);
+        have_fen = true;
+    }
+    lua_pop(L, 1);
+
+    std::vector<std::string> moves;
+    lua_getfield(L, 1, "moves");
+    if (lua_istable(L, -1)) {
+        lua_Integer n = luaL_len(L, -1);
+        moves.reserve(static_cast<std::size_t>(n));
+        for (lua_Integer i = 1; i <= n; ++i) {
+            lua_geti(L, -1, i);
+            if (lua_isstring(L, -1)) moves.emplace_back(lua_tostring(L, -1));
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+
+    if (!have_fen && moves.empty()) {
+        return luaL_error(L,
+            "tictac.engine.analyze: requires opts.fen or opts.moves");
+    }
+
+    lua_getfield(L, 1, "depth");
+    auto depth = static_cast<unsigned>(luaL_optinteger(L, -1, 0));
+    lua_pop(L, 1);
+    lua_getfield(L, 1, "movetime");
+    auto movetime_ms = static_cast<long long>(luaL_optinteger(L, -1, 0));
+    lua_pop(L, 1);
+    lua_getfield(L, 1, "multipv");
+    auto multipv = static_cast<unsigned>(luaL_optinteger(L, -1, 1));
+    lua_pop(L, 1);
+
+    AnalysisResult r;
+    try {
+        engine->set_position(fen, moves);
+        r = engine->analyze(std::chrono::milliseconds(movetime_ms), depth, multipv);
+    } catch (const std::exception& e) {
+        return luaL_error(L, "tictac.engine.analyze: %s", e.what());
+    }
+
+    auto push_pv = [&](const PvLine& pv) {
+        lua_createtable(L, 0, 6);
+        if (pv.is_mate) {
+            lua_pushinteger(L, pv.mate_in);
+            lua_setfield(L, -2, "mate");
+        } else {
+            lua_pushinteger(L, pv.score_cp);
+            lua_setfield(L, -2, "score");
+        }
+        lua_pushinteger(L, pv.depth);    lua_setfield(L, -2, "depth");
+        lua_pushinteger(L, pv.seldepth); lua_setfield(L, -2, "seldepth");
+        lua_pushinteger(L, static_cast<lua_Integer>(pv.nodes));
+        lua_setfield(L, -2, "nodes");
+
+        lua_createtable(L, static_cast<int>(pv.pv.size()), 0);
+        for (std::size_t j = 0; j < pv.pv.size(); ++j) {
+            lua_pushlstring(L, pv.pv[j].data(), pv.pv[j].size());
+            lua_seti(L, -2, static_cast<lua_Integer>(j + 1));
+        }
+        lua_setfield(L, -2, "pv");
+    };
+
+    lua_createtable(L, 0, 6);
+
+    lua_createtable(L, static_cast<int>(r.lines.size()), 0);
+    for (std::size_t i = 0; i < r.lines.size(); ++i) {
+        push_pv(r.lines[i]);
+        lua_seti(L, -2, static_cast<lua_Integer>(i + 1));
+    }
+    lua_setfield(L, -2, "lines");
+
+    if (!r.lines.empty()) {
+        const auto& pv0 = r.lines.front();
+        if (pv0.is_mate) {
+            lua_pushinteger(L, pv0.mate_in);
+            lua_setfield(L, -2, "mate");
+        } else {
+            lua_pushinteger(L, pv0.score_cp);
+            lua_setfield(L, -2, "score");
+        }
+        lua_pushinteger(L, pv0.depth); lua_setfield(L, -2, "depth");
+        lua_createtable(L, static_cast<int>(pv0.pv.size()), 0);
+        for (std::size_t j = 0; j < pv0.pv.size(); ++j) {
+            lua_pushlstring(L, pv0.pv[j].data(), pv0.pv[j].size());
+            lua_seti(L, -2, static_cast<lua_Integer>(j + 1));
+        }
+        lua_setfield(L, -2, "pv");
+    }
+
+    lua_pushinteger(L, static_cast<lua_Integer>(r.time.count()));
+    lua_setfield(L, -2, "time_ms");
+    lua_pushinteger(L, static_cast<lua_Integer>(r.total_nodes));
+    lua_setfield(L, -2, "nodes");
+
+    return 1;
+}
+
+int l_engine_set_option(lua_State* L) {
+    auto* engine = static_cast<EngineInterface*>(
+        lua_touserdata(L, lua_upvalueindex(1)));
+    if (!engine || !engine->is_running()) {
+        return luaL_error(L, "tictac.engine: not running");
+    }
+    const char* name  = luaL_checkstring(L, 1);
+    const char* value = luaL_checkstring(L, 2);
+    try {
+        engine->set_option(name, value);
+    } catch (const std::exception& e) {
+        return luaL_error(L, "%s", e.what());
+    }
+    return 0;
+}
+
+void register_engine(lua_State* L, EngineInterface* engine) {
+    lua_getglobal(L, "tictac");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushvalue(L, -1);
+        lua_setglobal(L, "tictac");
+    }
+
+    lua_newtable(L); // tictac.engine
+
+    lua_pushlightuserdata(L, engine);
+    lua_pushcclosure(L, l_engine_analyze, 1);
+    lua_setfield(L, -2, "analyze");
+
+    lua_pushlightuserdata(L, engine);
+    lua_pushcclosure(L, l_engine_set_option, 1);
+    lua_setfield(L, -2, "set_option");
+
+    lua_setfield(L, -2, "engine");
+    lua_pop(L, 1); // pop tictac
+}
+
 } // namespace
 
-LuaPlugin::LuaPlugin(const std::filesystem::path& script) {
+LuaPlugin::LuaPlugin(const std::filesystem::path& script,
+                     EngineInterface* engine) {
     L_ = luaL_newstate();
     if (!L_) throw std::runtime_error("Failed to allocate Lua state");
     luaL_openlibs(L_);
+
+    if (engine) register_engine(L_, engine);
 
     if (luaL_dofile(L_, script.string().c_str()) != LUA_OK) {
         std::string err = lua_tostring(L_, -1) ? lua_tostring(L_, -1) : "unknown error";
