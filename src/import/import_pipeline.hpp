@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <iosfwd>
 
 namespace tictac {
 
@@ -27,6 +28,11 @@ public:
 
     /// Import a single PGN file.
     ImportStats import_file(const std::filesystem::path& pgn_path);
+
+    /// Import PGN games from an arbitrary input stream. Used for sources
+    /// that don't have a stable on-disk path (e.g. clipboard, stdin).
+    /// The manifest is NOT updated — re-running re-imports the same games.
+    ImportStats import_stream(std::istream& in);
 
     /// Import all .pgn files in a directory.
     ImportStats import_directory(const std::filesystem::path& dir);

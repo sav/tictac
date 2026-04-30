@@ -1,9 +1,12 @@
 #include "cli/cli_app.hpp"
 
 #include <CLI/CLI.hpp>
+#include <array>
+#include <cstdio>
 #include <iostream>
 #include <fstream>
 #include <memory>
+#include <sstream>
 
 #include "engine/uci_engine.hpp"
 #include "import/import_pipeline.hpp"
@@ -17,6 +20,34 @@
 namespace tictac {
 
 namespace {
+
+/// Try clipboard tools in order. Returns true if a tool ran successfully
+/// (out may still be empty — caller distinguishes empty clipboard from a
+/// missing-tools situation). Returns false only when no tool was usable.
+bool read_clipboard(std::string& out) {
+    static constexpr std::array<const char*, 3> kCmds = {
+        "wl-paste --no-newline 2>/dev/null",
+        "xclip -selection clipboard -o 2>/dev/null",
+        "xsel --clipboard --output 2>/dev/null",
+    };
+    for (const char* cmd : kCmds) {
+        std::FILE* fp = ::popen(cmd, "r");
+        if (!fp) continue;
+        std::string buf;
+        char chunk[4096];
+        while (auto n = std::fread(chunk, 1, sizeof(chunk), fp)) {
+            buf.append(chunk, n);
+        }
+        int rc = ::pclose(fp);
+        if (rc == 0) {
+            out = std::move(buf);
+            return true;
+        }
+        // Non-zero usually means the tool isn't available (sh exit 127) or
+        // it explicitly errored on empty content (wl-paste). Try the next.
+    }
+    return false;
+}
 
 /// Spin up a UCI engine and apply NAME=VALUE options. Returns nullptr on
 /// failure, after writing a diagnostic to stderr.
@@ -130,7 +161,25 @@ int CliApp::cmd_import(const std::filesystem::path& input,
     ImportPipeline pipeline(store, pos_idx, seq_idx, manifest);
 
     ImportStats stats;
-    if (std::filesystem::is_directory(input)) {
+    if (input == "clipboard") {
+        std::string pgn;
+        if (!read_clipboard(pgn)) {
+            std::cerr << "Could not read clipboard. Install one of: "
+                         "wl-paste (wl-clipboard), xclip, xsel.\n";
+            return 2;
+        }
+        if (pgn.empty()) {
+            std::cerr << "Clipboard is empty.\n";
+            return 2;
+        }
+        std::cout << "Importing clipboard (" << pgn.size() << " bytes):\n";
+        std::istringstream iss(std::move(pgn));
+        stats = pipeline.import_stream(iss);
+        std::cout << "  -> " << stats.games_imported << " games";
+        if (stats.parse_errors > 0)
+            std::cout << " (" << stats.parse_errors << " errors)";
+        std::cout << "\n";
+    } else if (std::filesystem::is_directory(input)) {
         stats = pipeline.import_directory(input);
     } else {
         std::cout << "Importing " << input.filename() << ":\n";

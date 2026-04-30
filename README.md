@@ -69,8 +69,9 @@ cmake --build build-asan -j
 # 1. Build (Release)
 ./build.sh
 
-# 2. Import a PGN file or a directory of PGN files
+# 2. Import a PGN file, a directory of PGN files, or the clipboard
 ./build/src/tictac import path/to/games.pgn --db mydb
+./build/src/tictac import clipboard --db mydb
 
 # 3. Search by opening (SAN moves, space-separated)
 ./build/src/tictac search opening e4 c5 Nf3 d6 --db mydb
@@ -94,11 +95,33 @@ If `--db` is omitted everywhere, tictac uses `./tictac_db` in the current workin
 tictac import <input> [--db PATH] [--threads N]
 ```
 
-- `<input>` — a `.pgn` file or a directory containing `.pgn` files (recursed).
+- `<input>` — one of:
+  - a `.pgn` file,
+  - a directory containing `.pgn` files (recursed),
+  - the literal word `clipboard` to read PGN from the system clipboard
+    (probes `wl-paste`, `xclip`, `xsel` in that order).
 - `--db PATH` — database directory; created if missing. Default: `tictac_db`.
 - `--threads N` — reserved; currently ignored (see Status).
 
-The importer is incremental: re-importing the same file is a no-op. The manifest file (`<db>/manifest.txt`) records which files have already been ingested. After import, the position index is compacted and the sequence trie is flushed to disk.
+For each newly ingested game the importer prints `  #ID white vs black` so the
+assigned `GameId` is visible immediately. The same ID is what plugins receive
+as `game.id`.
+
+```
+tictac import clipboard --db mydb
+# Importing clipboard (417 bytes):
+#   #0 Alpha vs Beta
+#   #1 Gamma vs Delta
+#   #2 Epsilon vs Zeta
+#   -> 3 games
+```
+
+The importer is incremental for **file** and **directory** inputs: re-importing
+the same file is a no-op. The manifest file (`<db>/manifest.txt`) records
+which files have already been ingested. **Clipboard imports bypass the
+manifest** — re-pasting the same PGN re-imports it (with new GameIds). After
+import, the position index is compacted and the sequence trie is flushed to
+disk.
 
 ### `search position` — find games at a board state
 
