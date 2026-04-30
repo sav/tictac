@@ -159,14 +159,22 @@ int CliApp::cmd_search_opening(const std::vector<std::string>& moves,
 
     SearchEngine engine(store, pos_idx, seq_idx);
 
-    auto results = engine.search_opening(moves, limit);
+    std::vector<SequenceSearchResult> results;
+    std::uint32_t freq = 0;
+    try {
+        results = engine.search_opening(moves, limit);
+        freq = engine.opening_frequency(moves);
+    } catch (const std::exception& e) {
+        std::cerr << "Invalid opening moves: " << e.what() << "\n";
+        return 2;
+    }
 
     if (results.empty()) {
         std::cout << "No games found with this opening.\n";
         return 0;
     }
 
-    auto freq = engine.opening_frequency(moves);
+
     std::cout << freq << " game(s) total, showing " << results.size() << ":\n\n";
     for (const auto& r : results) {
         std::cout << "  Game #" << r.game_id << ": "
