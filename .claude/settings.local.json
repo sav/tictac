@@ -36,7 +36,15 @@
       "Bash(pkill -f tictac_tests)",
       "Bash(pkill -f ctest)",
       "Bash(timeout 90 /home/sav/my/src/tictac/build-debug/tests/tictac_tests)",
-      "Bash(/home/sav/my/src/tictac/build-debug/tests/tictac_tests [cli] *)"
+      "Bash(/home/sav/my/src/tictac/build-debug/tests/tictac_tests [cli] *)",
+      "Bash(./build/tictac)",
+      "Bash(./build/tictac search *)",
+      "Bash(./build/tictac import *)",
+      "Bash(/home/sav/my/src/tictac/build/src/tictac)",
+      "Bash(/home/sav/my/src/tictac/build/src/tictac import *)",
+      "Bash(/home/sav/my/src/tictac/build/src/tictac --help)",
+      "Bash(/home/sav/my/src/tictac/build/src/tictac bogus *)",
+      "Bash(wait)"
     ]
   }
 }

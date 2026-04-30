@@ -123,7 +123,19 @@ int CliApp::run(int argc, char* argv[]) {
     auto* compact_cmd = app.add_subcommand("compact", "Compact position index");
     compact_cmd->add_option("--db", db_path_str, "Database path")->default_val("tictac_db");
 
-    CLI11_PARSE(app, argc, argv);
+    try {
+        app.parse(argc, argv);
+    } catch (const CLI::ParseError& e) {
+        if (std::string(e.get_name()) == "RequiredError") {
+            const CLI::App* deepest = &app;
+            while (!deepest->get_subcommands().empty()) {
+                deepest = deepest->get_subcommands().front();
+            }
+            std::cerr << "ERROR: " << e.what() << "\n\n" << deepest->help();
+            return e.get_exit_code();
+        }
+        return app.exit(e);
+    }
 
     std::filesystem::path db_path(db_path_str);
 
