@@ -133,12 +133,12 @@ int CliApp::cmd_import(const std::filesystem::path& input,
     if (std::filesystem::is_directory(input)) {
         stats = pipeline.import_directory(input);
     } else {
-        std::cout << "Importing " << input.filename() << "..." << std::flush;
+        std::cout << "Importing " << input.filename() << ":\n";
         stats = pipeline.import_file(input);
         if (stats.files_skipped > 0) {
-            std::cout << " skipped (already indexed)\n";
+            std::cout << "  skipped (already indexed)\n";
         } else {
-            std::cout << " " << stats.games_imported << " games";
+            std::cout << "  -> " << stats.games_imported << " games";
             if (stats.parse_errors > 0)
                 std::cout << " (" << stats.parse_errors << " errors)";
             std::cout << "\n";
