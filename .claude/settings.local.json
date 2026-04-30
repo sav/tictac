@@ -19,7 +19,24 @@
       "Bash(./build/src/tictac search *)",
       "Bash(./build/src/tictac --help)",
       "Bash(./build/src/tictac import *)",
-      "Bash(./build/src/tictac stats *)"
+      "Bash(./build/src/tictac stats *)",
+      "Bash(/home/sav/my/src/tictac/build-debug/src/tictac stats *)",
+      "Bash(/home/sav/my/src/tictac/build-debug/src/tictac search *)",
+      "Bash(/home/sav/my/src/tictac/build/src/tictac search *)",
+      "Bash(apt list *)",
+      "Bash(/usr/games/stockfish)",
+      "Bash(/home/sav/my/src/tictac/build-debug/src/tictac import *)",
+      "Bash(xclip -selection clipboard -i)",
+      "Bash(xclip -selection clipboard -o)",
+      "Bash(grep -E \"error|Built tictac$|Linking\")",
+      "Bash(/home/sav/my/src/tictac/build-debug/tests/tictac_tests \"--engine bails when the binary cannot be started\")",
+      "Bash(/home/sav/my/src/tictac/build-debug/tests/tictac_tests \"search --engine evaluates positions with a UCI engine\")",
+      "Bash(/home/sav/my/src/tictac/build-debug/tests/tictac_tests \"[engine]\")",
+      "Bash(/home/sav/my/src/tictac/build-debug/tests/tictac_tests \"[cli]\")",
+      "Bash(pkill -f tictac_tests)",
+      "Bash(pkill -f ctest)",
+      "Bash(timeout 90 /home/sav/my/src/tictac/build-debug/tests/tictac_tests)",
+      "Bash(/home/sav/my/src/tictac/build-debug/tests/tictac_tests [cli] *)"
     ]
   }
 }
