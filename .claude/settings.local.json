@@ -12,7 +12,14 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(chmod +x /home/sav/my/src/tictac/build.sh)",
-      "Bash(/home/sav/my/src/tictac/build.sh -debug)"
+      "Bash(/home/sav/my/src/tictac/build.sh -debug)",
+      "Bash(./build-debug/src/tictac search *)",
+      "Bash(gdb -batch -ex \"run search opening B50\" -ex \"bt\" --args ./build-debug/src/tictac search opening B50)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(./build/src/tictac search *)",
+      "Bash(./build/src/tictac --help)",
+      "Bash(./build/src/tictac import *)",
+      "Bash(./build/src/tictac stats *)"
     ]
   }
 }

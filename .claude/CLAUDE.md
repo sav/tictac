@@ -22,3 +22,8 @@ cmake --build build-debug
 ```
 
 Always use the debug build when diagnosing issues or running tests. Use release for final/performance runs.
+
+## Commits
+
+Don't use the `Co-Authored-By` tag; instead, use `Assisted-By: <MODEL>`, where `<MODEL>` is the full version of the current model used to generate the code.
+ 
