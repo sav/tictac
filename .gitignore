@@ -3,3 +3,5 @@ tictac_db/
 *.dat
 *.idx
 compile_commands.json
+split
+build-debug
