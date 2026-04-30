@@ -3,6 +3,7 @@
 #include <CLI/CLI.hpp>
 #include <array>
 #include <cstdio>
+#include <functional>
 #include <iostream>
 #include <fstream>
 #include <memory>
@@ -49,6 +50,36 @@ bool read_clipboard(std::string& out) {
     return false;
 }
 
+/// Print top-level help plus a per-leaf section so every option (including
+/// those nested two levels deep, like `search position --plugin`) is visible
+/// in a single `--help` invocation.
+void print_full_help(std::ostream& out, const CLI::App& app) {
+    out << app.help("", CLI::AppFormatMode::All);
+    auto qualify_parents = [](const CLI::App* a) {
+        std::vector<std::string> parts;
+        for (const CLI::App* p = a->get_parent(); p != nullptr; p = p->get_parent()) {
+            parts.push_back(p->get_name());
+        }
+        std::string s;
+        for (auto it = parts.rbegin(); it != parts.rend(); ++it) {
+            if (!s.empty()) s += " ";
+            s += *it;
+        }
+        return s;
+    };
+    std::function<void(const CLI::App&)> walk = [&](const CLI::App& a) {
+        for (const auto* sub : a.get_subcommands({})) {
+            if (sub->get_name().empty()) continue;
+            if (sub->get_subcommands({}).empty()) {
+                out << "\n" << sub->help(qualify_parents(sub));
+            } else {
+                walk(*sub);
+            }
+        }
+    };
+    walk(app);
+}
+
 /// Spin up a UCI engine and apply NAME=VALUE options. Returns nullptr on
 /// failure, after writing a diagnostic to stderr.
 std::unique_ptr<UciEngine>
@@ -75,6 +106,8 @@ make_engine(const std::filesystem::path& path,
 int CliApp::run(int argc, char* argv[]) {
     CLI::App app{"tictac - Chess PGN Database Analyzer"};
     app.require_subcommand(1);
+    app.set_help_flag();
+    app.set_help_all_flag("-h,--help", "Print this help message and exit");
 
     std::string db_path_str = "tictac_db";
 
@@ -82,7 +115,9 @@ int CliApp::run(int argc, char* argv[]) {
     auto* import_cmd = app.add_subcommand("import", "Import PGN file(s) into the database");
     std::string import_input;
     unsigned import_threads = 1;
-    import_cmd->add_option("input", import_input, "PGN file or directory")->required();
+    import_cmd->add_option("input", import_input,
+                           "PGN file, directory, or 'clipboard' to read from the system clipboard")
+        ->required();
     import_cmd->add_option("--db", db_path_str, "Database path")->default_val("tictac_db");
     import_cmd->add_option("--threads", import_threads, "Number of threads")->default_val(1);
 
@@ -125,14 +160,13 @@ int CliApp::run(int argc, char* argv[]) {
 
     try {
         app.parse(argc, argv);
+    } catch (const CLI::CallForAllHelp&) {
+        print_full_help(std::cout, app);
+        return 0;
     } catch (const CLI::ParseError& e) {
         if (std::string(e.get_name()) == "RequiredError") {
-            const CLI::App* deepest = &app;
-            while (!deepest->get_subcommands().empty()) {
-                deepest = deepest->get_subcommands().front();
-            }
-            std::cerr << "ERROR: " << e.what() << "\n\n" << deepest->help();
-            return e.get_exit_code();
+            print_full_help(std::cerr, app);
+            return 0;
         }
         return app.exit(e);
     }
