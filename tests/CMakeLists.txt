@@ -10,6 +10,7 @@ add_executable(tictac_tests
     test_position_index.cpp
     test_sequence_index.cpp
     test_search.cpp
+    test_cli.cpp
 )
 
 target_link_libraries(tictac_tests PRIVATE tictac_lib Catch2::Catch2WithMain)

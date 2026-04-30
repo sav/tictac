@@ -342,14 +342,38 @@ cmake --build build-debug -j
 ctest --test-dir build-debug --output-on-failure
 ```
 
-Or run the test binary directly to filter by tag/name:
+Run the test binary directly to filter by tag/name:
 
 ```sh
-./build-debug/tests/tictac_tests
-./build-debug/tests/tictac_tests "[search]"
+./build-debug/tests/tictac_tests              # all tests
+./build-debug/tests/tictac_tests "[search]"   # by tag
+./build-debug/tests/tictac_tests "[cli]"      # CLI integration tests only
+./build-debug/tests/tictac_tests "search opening rejects non-SAN tokens with stderr message"
 ```
 
-Fixtures live under `tests/fixtures/` (`simple_game.pgn`, `multi_game.pgn`).
+Useful tags:
+
+| Tag         | What it covers                                               |
+| ----------- | ------------------------------------------------------------ |
+| `[cli]`     | End-to-end tests that drive `CliApp::run()` per subcommand   |
+| `[import]`  | `import` paths (file / directory / clipboard / re-import)    |
+| `[search]`  | `search position` / `search opening` (engine + CLI)          |
+| `[lua]`     | `--plugin` Lua integration                                   |
+| `[engine]`  | `--engine` UCI integration                                   |
+| `[clipboard]` | `import clipboard` (skipped when no clipboard tool found)  |
+
+The CLI suite drives the in-process binary and captures stdout/stderr at the
+file-descriptor level, so it covers both C++ (`std::cout`) and C (Lua's
+`io.write`) output paths. Tests that depend on external tools skip cleanly:
+
+- `[clipboard]` tests skip when `xclip` is missing or `DISPLAY` is unset.
+- `[engine]` tests skip when `stockfish` is not on `PATH`.
+
+Fixtures live under `tests/fixtures/`:
+
+- `simple_game.pgn`, `multi_game.pgn` — PGN inputs.
+- `filter_alpha.lua`, `move_iter.lua`, `no_on_match.lua`, `engine_label.lua`
+  — Lua scripts exercised by the `[lua]` and `[engine]` tests.
 
 ## Source layout
 
