@@ -10,7 +10,9 @@
       "Bash(rm:*)",
       "Bash(git status:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(chmod +x /home/sav/my/src/tictac/build.sh)",
+      "Bash(/home/sav/my/src/tictac/build.sh -debug)"
     ]
   }
 }
