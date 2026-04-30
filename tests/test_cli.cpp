@@ -244,6 +244,23 @@ TEST_CASE("search position finds games at a specific FEN", "[cli][search]") {
     fs::remove_all(db);
 }
 
+TEST_CASE("search id loads a game by its assigned ID", "[cli][search]") {
+    auto db = fresh_dir("search_id");
+    REQUIRE(run_cli({"import", (kFixtures / "multi_game.pgn").string(),
+                     "--db", db.string()}).rc == 0);
+
+    auto r = run_cli({"search", "id", "--id", "1", "--db", db.string()});
+    REQUIRE(r.rc == 0);
+    CHECK(contains(r.out, "Game #1"));
+    CHECK(contains(r.out, "Gamma vs Delta"));
+    CHECK(contains(r.out, "0-1"));
+
+    auto bad = run_cli({"search", "id", "--id", "99", "--db", db.string()});
+    CHECK(bad.rc != 0);
+    CHECK(contains(bad.err, "invalid GameId"));
+    fs::remove_all(db);
+}
+
 // ---------- search --plugin ----------
 
 TEST_CASE("search opening --plugin filters via Lua on_match", "[cli][search][lua]") {

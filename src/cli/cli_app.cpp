@@ -139,6 +139,12 @@ int CliApp::run(int argc, char* argv[]) {
     search_pos->add_option("--engine-option", search_engine_options,
                            "UCI option NAME=VALUE (repeatable)");
 
+    // Search by ID subcommand
+    auto* search_id_cmd = search_cmd->add_subcommand("id", "Look up a game by its assigned ID");
+    std::uint32_t search_id = 0;
+    search_id_cmd->add_option("--id", search_id, "Game ID")->required();
+    search_id_cmd->add_option("--db", db_path_str, "Database path")->default_val("tictac_db");
+
     // Search opening subcommand
     auto* search_open = search_cmd->add_subcommand("opening", "Search by opening moves (SAN)");
     std::vector<std::string> search_moves;
@@ -183,6 +189,9 @@ int CliApp::run(int argc, char* argv[]) {
     if (search_open->parsed()) {
         return cmd_search_opening(search_moves, db_path, search_limit, search_plugin,
                                   search_engine, search_engine_options);
+    }
+    if (search_id_cmd->parsed()) {
+        return cmd_search_id(search_id, db_path);
     }
     if (stats_cmd->parsed()) {
         return cmd_stats(db_path);
@@ -371,6 +380,40 @@ int CliApp::cmd_search_opening(const std::vector<std::string>& moves,
         if (!r.header.date.empty()) std::cout << " " << r.header.date;
         std::cout << "\n";
     }
+
+    return 0;
+}
+
+int CliApp::cmd_search_id(std::uint32_t id, const std::filesystem::path& db_path) {
+    GameStore store(db_path);
+
+    GameRecord game;
+    try {
+        game = store.load(id);
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << "\n";
+        return 2;
+    }
+
+    const char* result = "*";
+    switch (game.header.result) {
+        case chess::GameResult::WIN:  result = "1-0"; break;
+        case chess::GameResult::LOSE: result = "0-1"; break;
+        case chess::GameResult::DRAW: result = "1/2-1/2"; break;
+        case chess::GameResult::NONE: result = "*"; break;
+    }
+
+    std::cout << "Game #" << game.id << ": "
+              << game.header.white << " vs " << game.header.black;
+    if (!game.header.event.empty()) std::cout << " [" << game.header.event << "]";
+    if (!game.header.date.empty()) std::cout << " " << game.header.date;
+    std::cout << "\n";
+    std::cout << "  Result: " << result << "\n";
+    if (game.header.white_elo || game.header.black_elo) {
+        std::cout << "  Elo:    " << game.header.white_elo
+                  << " vs " << game.header.black_elo << "\n";
+    }
+    std::cout << "  Moves:  " << game.moves.size() << "\n";
 
     return 0;
 }
