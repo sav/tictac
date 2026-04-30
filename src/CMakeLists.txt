@@ -10,13 +10,14 @@ add_library(tictac_lib STATIC
     storage/position_index.cpp
     storage/sequence_index.cpp
     search/search_engine.cpp
+    plugin/lua_plugin.cpp
     cli/cli_app.cpp
 )
 
 target_include_directories(tictac_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(tictac_lib
     PUBLIC chess_lib CLI11::CLI11 tictac_warnings
-    PRIVATE Threads::Threads
+    PRIVATE Threads::Threads lua_lib
 )
 
 add_executable(tictac main.cpp)

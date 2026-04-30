@@ -14,8 +14,9 @@ Pre-1.0. The on-disk format is not committed-to; rebuild the database after pull
 ## Requirements
 
 - C++20 compiler (GCC 11+ or Clang 14+)
+- C compiler (Lua 5.4 is built from source)
 - CMake 3.20+
-- Internet access on the first configure (CMake `FetchContent` pulls the chess library, CLI11, and Catch2)
+- Internet access on the first configure (CMake `FetchContent` pulls the chess library, CLI11, Catch2, and Lua 5.4)
 
 ## Build
 
@@ -157,6 +158,62 @@ The output prefixes the listing with the **total** number of matching games and 
 
 Invalid SAN exits with a non-zero status and a message to stderr — the process no longer aborts.
 
+### `--plugin` — Lua filter
+
+Both `search position` and `search opening` accept a `--plugin <path>.lua` flag.
+The script is loaded once and called for every candidate match. Returning a
+truthy value keeps the result; falsy drops it. `--limit` then counts only the
+accepted results, so a restrictive filter can scan more candidates than `--limit`
+suggests.
+
+```sh
+tictac search opening e4 e5 Nf3 Nc6 Bb5 \
+  --plugin examples/plugins/elite.lua \
+  --limit 10
+```
+
+#### Plugin API
+
+The script must define a global function `on_match(game)`:
+
+```lua
+function on_match(game)
+    -- game.id          number    -- internal GameId
+    -- game.white       string
+    -- game.black       string
+    -- game.event       string
+    -- game.date        string
+    -- game.white_elo   number
+    -- game.black_elo   number
+    -- game.result      string    -- "win" | "lose" | "draw" | "*"
+    -- game.move_count  number    -- total half-moves (plies)
+    -- game.ply         number?   -- only set for `search position`
+    --
+    -- game:moves()  -- stateful iterator over every half-move:
+    --                  for i, san, uci in game:moves() do ... end
+    --   i   1-based half-move index
+    --   san standard algebraic notation in this game's context
+    --   uci long algebraic ("e2e4", "e7e8q", ...)
+    return true   -- keep this game in the result set
+end
+```
+
+- `result` is `"win"` if White won, `"lose"` if Black won (mirroring the
+  underlying chess library's enum), `"draw"`, or `"*"` for unknown.
+- `game:moves()` walks moves lazily by replaying from the starting position;
+  iterating to completion costs O(plies). Multiple calls on the same `game`
+  return independent iterators.
+- The plugin is free to write to stdout / stderr (`io.write`, `print`),
+  e.g. to produce custom output beyond the default summary line.
+- Plugin errors and unhandled Lua exceptions abort the search with a stderr
+  message and a non-zero exit status.
+
+Sample plugins live under `examples/plugins/`:
+
+- `elite.lua` — keep games where both sides are >= 2400.
+- `short_decisive.lua` — print custom info for every short, decisive game and
+  iterate the opening moves with `game:moves()`.
+
 ### `stats` — summarize a database
 
 ```
@@ -217,6 +274,7 @@ src/
   storage/    game_store, position_index, sequence_index,
               mmap_file, db_manifest
   search/     SearchEngine (position + opening queries)
+  plugin/     LuaPlugin -- loads .lua filters for `search --plugin`
   engine/     Engine analysis interface (placeholder)
   main.cpp    Thin entry point — instantiates CliApp
 tests/        Catch2 tests + PGN fixtures

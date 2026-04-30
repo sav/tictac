@@ -3,8 +3,10 @@
 #include <CLI/CLI.hpp>
 #include <iostream>
 #include <fstream>
+#include <memory>
 
 #include "import/import_pipeline.hpp"
+#include "plugin/lua_plugin.hpp"
 #include "search/search_engine.hpp"
 #include "storage/db_manifest.hpp"
 #include "storage/game_store.hpp"
@@ -34,9 +36,11 @@ int CliApp::run(int argc, char* argv[]) {
     auto* search_pos = search_cmd->add_subcommand("position", "Search by board position (FEN)");
     std::string search_fen;
     std::size_t search_limit = 20;
+    std::string search_plugin;
     search_pos->add_option("fen", search_fen, "FEN string")->required();
     search_pos->add_option("--db", db_path_str, "Database path")->default_val("tictac_db");
     search_pos->add_option("--limit", search_limit, "Maximum results")->default_val(20);
+    search_pos->add_option("--plugin", search_plugin, "Lua plugin script (.lua) to filter results");
 
     // Search opening subcommand
     auto* search_open = search_cmd->add_subcommand("opening", "Search by opening moves (SAN)");
@@ -44,6 +48,7 @@ int CliApp::run(int argc, char* argv[]) {
     search_open->add_option("moves", search_moves, "SAN moves (e.g. e4 e5 Nf3)")->required();
     search_open->add_option("--db", db_path_str, "Database path")->default_val("tictac_db");
     search_open->add_option("--limit", search_limit, "Maximum results")->default_val(20);
+    search_open->add_option("--plugin", search_plugin, "Lua plugin script (.lua) to filter results");
 
     // Stats subcommand
     auto* stats_cmd = app.add_subcommand("stats", "Show database statistics");
@@ -61,10 +66,10 @@ int CliApp::run(int argc, char* argv[]) {
         return cmd_import(import_input, db_path, import_threads);
     }
     if (search_pos->parsed()) {
-        return cmd_search_position(search_fen, db_path, search_limit);
+        return cmd_search_position(search_fen, db_path, search_limit, search_plugin);
     }
     if (search_open->parsed()) {
-        return cmd_search_opening(search_moves, db_path, search_limit);
+        return cmd_search_opening(search_moves, db_path, search_limit, search_plugin);
     }
     if (stats_cmd->parsed()) {
         return cmd_stats(db_path);
@@ -122,7 +127,8 @@ int CliApp::cmd_import(const std::filesystem::path& input,
 
 int CliApp::cmd_search_position(const std::string& fen,
                                 const std::filesystem::path& db_path,
-                                std::size_t limit) {
+                                std::size_t limit,
+                                const std::filesystem::path& plugin_path) {
     GameStore store(db_path);
     PositionIndex pos_idx(db_path);
     SequenceIndex seq_idx(db_path);
@@ -130,7 +136,27 @@ int CliApp::cmd_search_position(const std::string& fen,
 
     SearchEngine engine(store, pos_idx, seq_idx);
 
-    auto results = engine.search_position(fen, limit);
+    std::unique_ptr<LuaPlugin> plugin;
+    GameFilter filter;
+    if (!plugin_path.empty()) {
+        try {
+            plugin = std::make_unique<LuaPlugin>(plugin_path);
+        } catch (const std::exception& e) {
+            std::cerr << e.what() << "\n";
+            return 2;
+        }
+        filter = [&](const GameRecord& g, std::optional<HalfMoveIdx> ply) {
+            return plugin->on_match(g, ply);
+        };
+    }
+
+    std::vector<PositionSearchResult> results;
+    try {
+        results = engine.search_position(fen, limit, filter);
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << "\n";
+        return 2;
+    }
 
     if (results.empty()) {
         std::cout << "No games found with this position.\n";
@@ -151,7 +177,8 @@ int CliApp::cmd_search_position(const std::string& fen,
 
 int CliApp::cmd_search_opening(const std::vector<std::string>& moves,
                                const std::filesystem::path& db_path,
-                               std::size_t limit) {
+                               std::size_t limit,
+                               const std::filesystem::path& plugin_path) {
     GameStore store(db_path);
     PositionIndex pos_idx(db_path);
     SequenceIndex seq_idx(db_path);
@@ -159,10 +186,24 @@ int CliApp::cmd_search_opening(const std::vector<std::string>& moves,
 
     SearchEngine engine(store, pos_idx, seq_idx);
 
+    std::unique_ptr<LuaPlugin> plugin;
+    GameFilter filter;
+    if (!plugin_path.empty()) {
+        try {
+            plugin = std::make_unique<LuaPlugin>(plugin_path);
+        } catch (const std::exception& e) {
+            std::cerr << e.what() << "\n";
+            return 2;
+        }
+        filter = [&](const GameRecord& g, std::optional<HalfMoveIdx> ply) {
+            return plugin->on_match(g, ply);
+        };
+    }
+
     std::vector<SequenceSearchResult> results;
     std::uint32_t freq = 0;
     try {
-        results = engine.search_opening(moves, limit);
+        results = engine.search_opening(moves, limit, filter);
         freq = engine.opening_frequency(moves);
     } catch (const std::exception& e) {
         std::cerr << "Invalid opening moves: " << e.what() << "\n";

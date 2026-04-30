@@ -15,34 +15,34 @@ SearchEngine::SearchEngine(const GameStore& store, const PositionIndex& pos_idx,
 {}
 
 std::vector<PositionSearchResult>
-SearchEngine::search_position(std::string_view fen, std::size_t limit) const {
+SearchEngine::search_position(std::string_view fen, std::size_t limit,
+                              const GameFilter& filter) const {
     chess::Board board{std::string(fen)};
     auto key = board.hash();
 
-    auto occurrences = pos_idx_.lookup(key, limit);
+    // Without a filter we can ask the index to truncate. With a filter we
+    // need every candidate so `limit` can count accepted results.
+    auto occurrences = pos_idx_.lookup(key, filter ? 0 : limit);
 
     std::vector<PositionSearchResult> results;
-    results.reserve(occurrences.size());
+    results.reserve(std::min(occurrences.size(), limit));
 
     for (const auto& occ : occurrences) {
+        if (results.size() >= limit) break;
         try {
             auto game = store_.load(occ.game_id);
 
             // Verify position by replaying (guard against Zobrist collisions)
             chess::Board replay;
-            bool valid = true;
             for (HalfMoveIdx i = 0; i < occ.ply && i < game.moves.size(); ++i) {
                 chess::Move m(game.moves[i]);
                 replay.makeMove(m);
             }
+            if (replay.hash() != key) continue; // Zobrist collision
 
-            if (replay.hash() != key) {
-                valid = false; // Zobrist collision
-            }
+            if (filter && !filter(game, occ.ply)) continue;
 
-            if (valid) {
-                results.push_back({occ.game_id, occ.ply, std::move(game.header)});
-            }
+            results.push_back({occ.game_id, occ.ply, std::move(game.header)});
         } catch (...) {
             // Skip games that fail to load
         }
@@ -52,18 +52,20 @@ SearchEngine::search_position(std::string_view fen, std::size_t limit) const {
 }
 
 std::vector<SequenceSearchResult>
-SearchEngine::search_opening(const std::vector<std::string>& san_moves, std::size_t limit) const {
+SearchEngine::search_opening(const std::vector<std::string>& san_moves,
+                             std::size_t limit, const GameFilter& filter) const {
     auto compact = san_to_compact(san_moves);
     auto game_ids = seq_idx_.search_prefix(compact);
 
     std::vector<SequenceSearchResult> results;
-    auto count = std::min(game_ids.size(), limit);
-    results.reserve(count);
+    results.reserve(std::min<std::size_t>(game_ids.size(), limit));
 
-    for (std::size_t i = 0; i < count; ++i) {
+    for (auto id : game_ids) {
+        if (results.size() >= limit) break;
         try {
-            auto game = store_.load(game_ids[i]);
-            results.push_back({game_ids[i], std::move(game.header)});
+            auto game = store_.load(id);
+            if (filter && !filter(game, std::nullopt)) continue;
+            results.push_back({id, std::move(game.header)});
         } catch (...) {
             // Skip
         }
