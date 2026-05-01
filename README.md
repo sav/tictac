@@ -175,7 +175,7 @@ The output prefixes the listing with the **total** number of matching games and 
 ```
 999484 game(s) total, showing 20:
 
-  Game #18: Milo9988 vs marselle116 [Rated Classical game]
+  Game #18: smach vs Cadu_Brondi [Rated Classical game]
   ...
 ```
 
