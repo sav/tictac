@@ -1,24 +1,50 @@
 #include "viz/board_widget.hpp"
 
-#include <QFont>
-#include <QFontMetrics>
 #include <QPainter>
 #include <QPaintEvent>
+#include <QSvgRenderer>
+#include <array>
+#include <memory>
 
 namespace tictac {
 
 namespace {
 
-const QChar* glyph_for(char piece) {
-    static const QChar wK{0x2654}, wQ{0x2655}, wR{0x2656}, wB{0x2657}, wN{0x2658}, wP{0x2659};
-    static const QChar bK{0x265A}, bQ{0x265B}, bR{0x265C}, bB{0x265D}, bN{0x265E}, bP{0x265F};
+// Resource paths populated by `qrc_pieces` (built from src/viz/pieces.qrc).
+QString svg_path_for(char piece) {
     switch (piece) {
-        case 'K': return &wK; case 'Q': return &wQ; case 'R': return &wR;
-        case 'B': return &wB; case 'N': return &wN; case 'P': return &wP;
-        case 'k': return &bK; case 'q': return &bQ; case 'r': return &bR;
-        case 'b': return &bB; case 'n': return &bN; case 'p': return &bP;
-        default: return nullptr;
+        case 'K': return ":/pieces/merida/wK.svg";
+        case 'Q': return ":/pieces/merida/wQ.svg";
+        case 'R': return ":/pieces/merida/wR.svg";
+        case 'B': return ":/pieces/merida/wB.svg";
+        case 'N': return ":/pieces/merida/wN.svg";
+        case 'P': return ":/pieces/merida/wP.svg";
+        case 'k': return ":/pieces/merida/bK.svg";
+        case 'q': return ":/pieces/merida/bQ.svg";
+        case 'r': return ":/pieces/merida/bR.svg";
+        case 'b': return ":/pieces/merida/bB.svg";
+        case 'n': return ":/pieces/merida/bN.svg";
+        case 'p': return ":/pieces/merida/bP.svg";
+        default:  return {};
     }
+}
+
+// One renderer per piece type. Cached on first use; the resource lives for
+// the lifetime of the binary so this is fine to keep as a function-local
+// static.
+QSvgRenderer* renderer_for(char piece) {
+    static std::array<std::unique_ptr<QSvgRenderer>, 128> cache;
+    auto idx = static_cast<unsigned char>(piece);
+    if (!cache[idx]) {
+        QString path = svg_path_for(piece);
+        if (path.isEmpty()) return nullptr;
+        cache[idx] = std::make_unique<QSvgRenderer>(path);
+        if (!cache[idx]->isValid()) {
+            cache[idx].reset();
+            return nullptr;
+        }
+    }
+    return cache[idx].get();
 }
 
 } // namespace
@@ -41,7 +67,7 @@ void BoardWidget::set_fen(const std::string& fen) {
 void BoardWidget::paintEvent(QPaintEvent*) {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing);
-    p.setRenderHint(QPainter::TextAntialiasing);
+    p.setRenderHint(QPainter::SmoothPixmapTransform);
 
     const int side = qMin(width(), height());
     const int sq = side / 8;
@@ -51,7 +77,6 @@ void BoardWidget::paintEvent(QPaintEvent*) {
     static const QColor light(240, 217, 181);
     static const QColor dark(181, 136, 99);
 
-    // Squares
     for (int r = 7; r >= 0; --r) {
         for (int f = 0; f < 8; ++f) {
             QRect cell(x0 + f * sq, y0 + (7 - r) * sq, sq, sq);
@@ -62,20 +87,17 @@ void BoardWidget::paintEvent(QPaintEvent*) {
 
     if (!valid_) return;
 
-    QFont font = p.font();
-    font.setPixelSize(static_cast<int>(sq * 0.78));
-    p.setFont(font);
-
+    // Inset pieces a couple of pixels so they don't crowd the square edge.
+    const int pad = qMax(1, sq / 18);
     for (int r = 7; r >= 0; --r) {
         for (int f = 0; f < 8; ++f) {
             char piece = model_.at(f, r);
             if (!piece) continue;
-            const QChar* g = glyph_for(piece);
-            if (!g) continue;
-            QRect cell(x0 + f * sq, y0 + (7 - r) * sq, sq, sq);
-            // Outline both for readability against either square color.
-            p.setPen(Qt::black);
-            p.drawText(cell, Qt::AlignCenter, QString(*g));
+            QSvgRenderer* renderer = renderer_for(piece);
+            if (!renderer) continue;
+            QRect cell(x0 + f * sq + pad, y0 + (7 - r) * sq + pad,
+                       sq - 2 * pad, sq - 2 * pad);
+            renderer->render(&p, cell);
         }
     }
 }

@@ -13,28 +13,32 @@ set(TICTAC_LIB_SOURCES
     engine/uci_engine.cpp
     plugin/lua_plugin.cpp
     cli/cli_app.cpp
+    # Pure C++ FEN parser — always built so its tests can run even when Qt
+    # is unavailable.
+    viz/board_model.cpp
 )
 
 set(TICTAC_HAVE_VIZ OFF)
 if(TICTAC_BUILD_VIZ)
-    find_package(Qt6 QUIET COMPONENTS Widgets)
+    find_package(Qt6 QUIET COMPONENTS Widgets Svg)
     if(NOT Qt6_FOUND)
-        find_package(Qt5 QUIET COMPONENTS Widgets)
+        find_package(Qt5 QUIET COMPONENTS Widgets Svg)
     endif()
     if(Qt6_FOUND OR Qt5_FOUND)
         set(TICTAC_HAVE_VIZ ON)
         list(APPEND TICTAC_LIB_SOURCES
-            viz/board_model.cpp
             viz/board_widget.cpp
             viz/board_window.cpp
             viz/viz_session.cpp
+            viz/pieces.qrc
         )
     else()
-        message(WARNING "TICTAC_BUILD_VIZ=ON but neither Qt6 nor Qt5 was found; building without visualization")
+        message(WARNING "TICTAC_BUILD_VIZ=ON but neither Qt6 nor Qt5 (Widgets+Svg) was found; building without visualization")
     endif()
 endif()
 
 set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 add_library(tictac_lib STATIC ${TICTAC_LIB_SOURCES})
 
 target_include_directories(tictac_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
@@ -46,9 +50,9 @@ target_link_libraries(tictac_lib
 if(TICTAC_HAVE_VIZ)
     target_compile_definitions(tictac_lib PUBLIC TICTAC_HAVE_VIZ)
     if(Qt6_FOUND)
-        target_link_libraries(tictac_lib PUBLIC Qt6::Widgets)
+        target_link_libraries(tictac_lib PUBLIC Qt6::Widgets Qt6::Svg)
     else()
-        target_link_libraries(tictac_lib PUBLIC Qt5::Widgets)
+        target_link_libraries(tictac_lib PUBLIC Qt5::Widgets Qt5::Svg)
     endif()
 endif()
 

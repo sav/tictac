@@ -1,0 +1,17 @@
+<!DOCTYPE RCC>
+<RCC version="1.0">
+  <qresource prefix="/pieces/merida">
+    <file alias="wK.svg">../../assets/pieces/merida/wK.svg</file>
+    <file alias="wQ.svg">../../assets/pieces/merida/wQ.svg</file>
+    <file alias="wR.svg">../../assets/pieces/merida/wR.svg</file>
+    <file alias="wB.svg">../../assets/pieces/merida/wB.svg</file>
+    <file alias="wN.svg">../../assets/pieces/merida/wN.svg</file>
+    <file alias="wP.svg">../../assets/pieces/merida/wP.svg</file>
+    <file alias="bK.svg">../../assets/pieces/merida/bK.svg</file>
+    <file alias="bQ.svg">../../assets/pieces/merida/bQ.svg</file>
+    <file alias="bR.svg">../../assets/pieces/merida/bR.svg</file>
+    <file alias="bB.svg">../../assets/pieces/merida/bB.svg</file>
+    <file alias="bN.svg">../../assets/pieces/merida/bN.svg</file>
+    <file alias="bP.svg">../../assets/pieces/merida/bP.svg</file>
+  </qresource>
+</RCC>

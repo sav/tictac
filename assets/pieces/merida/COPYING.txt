@@ -1,0 +1,13 @@
+Merida chess piece set
+======================
+
+Author:   Armando Hernandez Marroquin
+License:  GPL-2.0-or-later
+Source:   https://github.com/lichess-org/lila/tree/master/public/piece/merida
+          (mirror of the SVG redraw bundled by the lichess project,
+          fetched verbatim into this repository)
+
+The 12 SVG files (wK, wQ, wR, wB, wN, wP, bK, bQ, bR, bB, bN, bP) are
+distributed under GPL-2.0-or-later, which is compatible with this
+project's GPL-3.0 license. See the upstream lichess COPYING.md for the
+full attribution table.
