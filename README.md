@@ -217,6 +217,12 @@ function on_match(game)
     --   i   1-based half-move index
     --   san standard algebraic notation in this game's context
     --   uci long algebraic ("e2e4", "e7e8q", ...)
+    --
+    -- game:fen([ply]) -> string
+    --   FEN snapshot of the board after `ply` half-moves.
+    --   ply omitted: defaults to game.ply if set, else 0 (starting position).
+    --   ply = 0:               starting position
+    --   ply = game.move_count: final position
     return true   -- keep this game in the result set
 end
 ```
@@ -226,6 +232,9 @@ end
 - `game:moves()` walks moves lazily by replaying from the starting position;
   iterating to completion costs O(plies). Multiple calls on the same `game`
   return independent iterators.
+- `game:fen(ply)` replays from the starting position up to `ply` and returns
+  the resulting FEN. Useful with `tictac.engine.analyze{ fen = ... }` to
+  evaluate any specific point of the game.
 - The plugin is free to write to stdout / stderr (`io.write`, `print`),
   e.g. to produce custom output beyond the default summary line.
 - Plugin errors and unhandled Lua exceptions abort the search with a stderr
@@ -372,8 +381,9 @@ file-descriptor level, so it covers both C++ (`std::cout`) and C (Lua's
 Fixtures live under `tests/fixtures/`:
 
 - `simple_game.pgn`, `multi_game.pgn` — PGN inputs.
-- `filter_alpha.lua`, `move_iter.lua`, `no_on_match.lua`, `engine_label.lua`
-  — Lua scripts exercised by the `[lua]` and `[engine]` tests.
+- `filter_alpha.lua`, `move_iter.lua`, `fen_iter.lua`, `no_on_match.lua`,
+  `engine_label.lua` — Lua scripts exercised by the `[lua]` and `[engine]`
+  tests.
 
 ## Source layout
 

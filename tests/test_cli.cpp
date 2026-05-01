@@ -293,6 +293,31 @@ TEST_CASE("search opening --plugin exposes game:moves() with san+uci", "[cli][se
     fs::remove_all(db);
 }
 
+TEST_CASE("search opening --plugin exposes game:fen() at any ply", "[cli][search][lua]") {
+    auto db = fresh_dir("search_plugin_fen");
+    REQUIRE(run_cli({"import", (kFixtures / "multi_game.pgn").string(),
+                     "--db", db.string()}).rc == 0);
+
+    auto plugin = (kFixtures / "fen_iter.lua").string();
+    auto r = run_cli({"search", "opening", "e4", "e5",
+                      "--db", db.string(), "--plugin", plugin});
+    REQUIRE(r.rc == 0);
+
+    // ply=0 is the standard chess starting position.
+    CHECK(contains(r.out,
+        "start=rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"));
+
+    // ply=1 is the position after 1.e4 (en-passant target e3).
+    CHECK(contains(r.out, "ply1=rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR"));
+
+    // Final position of Alpha vs Beta (1.e4 e5 2.Nf3 Nc6 3.Bb5).
+    CHECK(contains(r.out, "end=r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R"));
+
+    // No match ply on opening search → game:fen() falls back to ply 0.
+    CHECK(contains(r.out, "default=rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR"));
+    fs::remove_all(db);
+}
+
 TEST_CASE("search --plugin errors on missing on_match", "[cli][search][lua]") {
     auto db = fresh_dir("search_plugin_bad");
     REQUIRE(run_cli({"import", (kFixtures / "multi_game.pgn").string(),

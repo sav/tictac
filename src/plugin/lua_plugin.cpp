@@ -73,6 +73,56 @@ int moves_iter(lua_State* L) {
     return 3;
 }
 
+// game:fen([ply]) -> FEN string at the requested half-move index.
+//
+// ply = 0 returns the starting position, ply = N returns the position after
+// the first N half-moves, ply = game.move_count returns the final position.
+//
+// When called with no argument, falls back to game.ply (set by position
+// search) or 0 (the starting position) if no match ply is available.
+int game_fen(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+
+    lua_getfield(L, 1, "__game_ptr");
+    if (!lua_islightuserdata(L, -1)) {
+        return luaL_error(L, "game:fen(): missing __game_ptr");
+    }
+    auto* game = static_cast<const GameRecord*>(lua_touserdata(L, -1));
+    lua_pop(L, 1);
+
+    auto move_count = static_cast<lua_Integer>(game->moves.size());
+
+    lua_Integer target_ply;
+    if (lua_gettop(L) >= 2 && !lua_isnoneornil(L, 2)) {
+        target_ply = luaL_checkinteger(L, 2);
+    } else {
+        lua_getfield(L, 1, "ply");
+        target_ply = lua_isinteger(L, -1) ? lua_tointeger(L, -1) : 0;
+        lua_pop(L, 1);
+    }
+
+    if (target_ply < 0 || target_ply > move_count) {
+        return luaL_error(L,
+            "game:fen(): ply %d out of range [0, %d]",
+            static_cast<int>(target_ply),
+            static_cast<int>(move_count));
+    }
+
+    chess::Board board;
+    try {
+        for (lua_Integer i = 0; i < target_ply; ++i) {
+            chess::Move m{game->moves[static_cast<std::size_t>(i)]};
+            board.makeMove(m);
+        }
+    } catch (const std::exception& e) {
+        return luaL_error(L, "game:fen(): %s", e.what());
+    }
+
+    std::string fen = board.getFen();
+    lua_pushlstring(L, fen.data(), fen.size());
+    return 1;
+}
+
 // game:moves() -> stateful iterator yielding (idx, san, uci).
 int game_moves(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
@@ -145,6 +195,9 @@ void push_game_table(lua_State* L, const GameRecord& game,
 
     lua_pushcfunction(L, game_moves);
     lua_setfield(L, -2, "moves");
+
+    lua_pushcfunction(L, game_fen);
+    lua_setfield(L, -2, "fen");
 }
 
 int l_engine_analyze(lua_State* L) {
