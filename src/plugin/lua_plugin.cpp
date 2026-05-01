@@ -14,6 +14,9 @@ extern "C" {
 
 #include "chess.hpp"
 #include "engine/engine_interface.hpp"
+#ifdef TICTAC_HAVE_VIZ
+#include "viz/viz_session.hpp"
+#endif
 
 namespace tictac {
 
@@ -327,6 +330,69 @@ int l_engine_set_option(lua_State* L) {
     return 0;
 }
 
+#ifdef TICTAC_HAVE_VIZ
+int l_viz_add(lua_State* L) {
+    auto* viz = static_cast<VizSession*>(lua_touserdata(L, lua_upvalueindex(1)));
+    if (!viz) return luaL_error(L, "tictac.viz: not initialized");
+
+    const char* fen = luaL_checkstring(L, 1);
+
+    std::map<std::string, std::string> info;
+    if (lua_gettop(L) >= 2 && !lua_isnoneornil(L, 2)) {
+        luaL_checktype(L, 2, LUA_TTABLE);
+        lua_pushnil(L);
+        while (lua_next(L, 2) != 0) {
+            // key at -2, value at -1. Stringify both via lua_tolstring's
+            // implicit number-to-string conversion (won't disturb the
+            // iterator's original key, since we only stringify a copy).
+            lua_pushvalue(L, -2);
+            std::size_t klen = 0;
+            const char* k = lua_tolstring(L, -1, &klen);
+            std::size_t vlen = 0;
+            const char* v = lua_tolstring(L, -2, &vlen);
+            if (k && v) info.emplace(std::string(k, klen), std::string(v, vlen));
+            lua_pop(L, 2);
+        }
+    }
+
+    try {
+        viz->add(fen, std::move(info));
+    } catch (const std::exception& e) {
+        return luaL_error(L, "tictac.viz.add: %s", e.what());
+    }
+    return 0;
+}
+
+int l_viz_count(lua_State* L) {
+    auto* viz = static_cast<VizSession*>(lua_touserdata(L, lua_upvalueindex(1)));
+    lua_pushinteger(L, viz ? static_cast<lua_Integer>(viz->size()) : 0);
+    return 1;
+}
+
+void register_viz(lua_State* L, VizSession* viz) {
+    lua_getglobal(L, "tictac");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        lua_newtable(L);
+        lua_pushvalue(L, -1);
+        lua_setglobal(L, "tictac");
+    }
+
+    lua_newtable(L); // tictac.viz
+
+    lua_pushlightuserdata(L, viz);
+    lua_pushcclosure(L, l_viz_add, 1);
+    lua_setfield(L, -2, "add");
+
+    lua_pushlightuserdata(L, viz);
+    lua_pushcclosure(L, l_viz_count, 1);
+    lua_setfield(L, -2, "count");
+
+    lua_setfield(L, -2, "viz");
+    lua_pop(L, 1);
+}
+#endif
+
 void register_engine(lua_State* L, EngineInterface* engine) {
     lua_getglobal(L, "tictac");
     if (!lua_istable(L, -1)) {
@@ -353,12 +419,18 @@ void register_engine(lua_State* L, EngineInterface* engine) {
 } // namespace
 
 LuaPlugin::LuaPlugin(const std::filesystem::path& script,
-                     EngineInterface* engine) {
+                     EngineInterface* engine,
+                     VizSession* viz) {
     L_ = luaL_newstate();
     if (!L_) throw std::runtime_error("Failed to allocate Lua state");
     luaL_openlibs(L_);
 
     if (engine) register_engine(L_, engine);
+#ifdef TICTAC_HAVE_VIZ
+    if (viz) register_viz(L_, viz);
+#else
+    (void)viz;
+#endif
 
     if (luaL_dofile(L_, script.string().c_str()) != LUA_OK) {
         std::string err = lua_tostring(L_, -1) ? lua_tostring(L_, -1) : "unknown error";

@@ -17,6 +17,9 @@
 #include "storage/game_store.hpp"
 #include "storage/position_index.hpp"
 #include "storage/sequence_index.hpp"
+#ifdef TICTAC_HAVE_VIZ
+#include "viz/viz_session.hpp"
+#endif
 
 namespace tictac {
 
@@ -143,6 +146,7 @@ int CliApp::run(int argc, char* argv[]) {
     std::string search_plugin;
     std::string search_engine;
     std::vector<std::string> search_engine_options;
+    bool search_viz = false;
     search_pos->add_option("fen", search_fen, "FEN string")->required();
     search_pos->add_option("--db", db_path_str, "Database path")->default_val("tictac_db");
     search_pos->add_option("--limit", search_limit, "Maximum results")->default_val(20);
@@ -150,6 +154,8 @@ int CliApp::run(int argc, char* argv[]) {
     search_pos->add_option("--engine", search_engine, "UCI engine binary (e.g. stockfish)");
     search_pos->add_option("--engine-option", search_engine_options,
                            "UCI option NAME=VALUE (repeatable)");
+    search_pos->add_flag("--viz", search_viz,
+                         "Open a Qt window after search to browse plugin-emitted FENs");
 
     // Search by ID subcommand
     auto* search_id_cmd = search_cmd->add_subcommand("id", "Look up a game by its assigned ID");
@@ -167,6 +173,8 @@ int CliApp::run(int argc, char* argv[]) {
     search_open->add_option("--engine", search_engine, "UCI engine binary (e.g. stockfish)");
     search_open->add_option("--engine-option", search_engine_options,
                             "UCI option NAME=VALUE (repeatable)");
+    search_open->add_flag("--viz", search_viz,
+                          "Open a Qt window after search to browse plugin-emitted FENs");
 
     // Stats subcommand
     auto* stats_cmd = app.add_subcommand("stats", "Show database statistics");
@@ -205,11 +213,11 @@ int CliApp::run(int argc, char* argv[]) {
     }
     if (search_pos->parsed()) {
         return cmd_search_position(search_fen, db_path, search_limit, search_plugin,
-                                   search_engine, search_engine_options);
+                                   search_engine, search_engine_options, search_viz);
     }
     if (search_open->parsed()) {
         return cmd_search_opening(search_moves, db_path, search_limit, search_plugin,
-                                  search_engine, search_engine_options);
+                                  search_engine, search_engine_options, search_viz);
     }
     if (search_id_cmd->parsed()) {
         return cmd_search_id(search_id, db_path);
@@ -296,7 +304,8 @@ int CliApp::cmd_search_position(const std::string& fen,
                                 std::size_t limit,
                                 const std::filesystem::path& plugin_path,
                                 const std::filesystem::path& engine_path,
-                                const std::vector<std::string>& engine_options) {
+                                const std::vector<std::string>& engine_options,
+                                bool viz) {
     GameStore store(db_path);
     PositionIndex pos_idx(db_path);
     SequenceIndex seq_idx(db_path);
@@ -310,11 +319,25 @@ int CliApp::cmd_search_position(const std::string& fen,
         if (!uci) return 2;
     }
 
+#ifdef TICTAC_HAVE_VIZ
+    std::unique_ptr<VizSession> viz_session;
+    if (viz) viz_session = std::make_unique<VizSession>();
+#else
+    if (viz) {
+        std::cerr << "--viz: this build was compiled without Qt support\n";
+        return 2;
+    }
+#endif
+
     std::unique_ptr<LuaPlugin> plugin;
     GameFilter filter;
     if (!plugin_path.empty()) {
         try {
+#ifdef TICTAC_HAVE_VIZ
+            plugin = std::make_unique<LuaPlugin>(plugin_path, uci.get(), viz_session.get());
+#else
             plugin = std::make_unique<LuaPlugin>(plugin_path, uci.get());
+#endif
         } catch (const std::exception& e) {
             std::cerr << e.what() << "\n";
             return 2;
@@ -346,6 +369,10 @@ int CliApp::cmd_search_position(const std::string& fen,
         std::cout << "\n";
     }
 
+#ifdef TICTAC_HAVE_VIZ
+    if (viz_session && viz_session->size() > 0) viz_session->run();
+#endif
+
     return 0;
 }
 
@@ -354,7 +381,8 @@ int CliApp::cmd_search_opening(const std::vector<std::string>& moves,
                                std::size_t limit,
                                const std::filesystem::path& plugin_path,
                                const std::filesystem::path& engine_path,
-                               const std::vector<std::string>& engine_options) {
+                               const std::vector<std::string>& engine_options,
+                               bool viz) {
     GameStore store(db_path);
     PositionIndex pos_idx(db_path);
     SequenceIndex seq_idx(db_path);
@@ -368,11 +396,25 @@ int CliApp::cmd_search_opening(const std::vector<std::string>& moves,
         if (!uci) return 2;
     }
 
+#ifdef TICTAC_HAVE_VIZ
+    std::unique_ptr<VizSession> viz_session;
+    if (viz) viz_session = std::make_unique<VizSession>();
+#else
+    if (viz) {
+        std::cerr << "--viz: this build was compiled without Qt support\n";
+        return 2;
+    }
+#endif
+
     std::unique_ptr<LuaPlugin> plugin;
     GameFilter filter;
     if (!plugin_path.empty()) {
         try {
+#ifdef TICTAC_HAVE_VIZ
+            plugin = std::make_unique<LuaPlugin>(plugin_path, uci.get(), viz_session.get());
+#else
             plugin = std::make_unique<LuaPlugin>(plugin_path, uci.get());
+#endif
         } catch (const std::exception& e) {
             std::cerr << e.what() << "\n";
             return 2;
@@ -406,6 +448,10 @@ int CliApp::cmd_search_opening(const std::vector<std::string>& moves,
         if (!r.header.date.empty()) std::cout << " " << r.header.date;
         std::cout << "\n";
     }
+
+#ifdef TICTAC_HAVE_VIZ
+    if (viz_session && viz_session->size() > 0) viz_session->run();
+#endif
 
     return 0;
 }

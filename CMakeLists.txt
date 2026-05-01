@@ -8,6 +8,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(TICTAC_BUILD_TESTS "Build tests" ON)
 option(TICTAC_BUILD_BENCH "Build benchmarks" OFF)
 option(TICTAC_ENABLE_SANITIZERS "Enable ASan+UBSan" OFF)
+option(TICTAC_BUILD_VIZ "Build Qt-based FEN visualization" ON)
 
 include(cmake/CompilerWarnings.cmake)
 include(cmake/Dependencies.cmake)

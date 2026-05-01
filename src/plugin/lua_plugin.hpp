@@ -10,6 +10,7 @@ struct lua_State;
 namespace tictac {
 
 class EngineInterface;
+class VizSession;
 
 /// Loads a Lua plugin script and dispatches game records to its `on_match`.
 ///
@@ -19,10 +20,13 @@ class EngineInterface;
 ///
 /// When constructed with a non-null `engine`, the script also gets a global
 /// `tictac.engine` table with `analyze(opts)` and `set_option(name, value)`.
+/// When `viz` is non-null, `tictac.viz.add(fen, info)` becomes available for
+/// queueing entries to be browsed in a Qt window after the search.
 class LuaPlugin {
 public:
     explicit LuaPlugin(const std::filesystem::path& script,
-                       EngineInterface* engine = nullptr);
+                       EngineInterface* engine = nullptr,
+                       VizSession* viz = nullptr);
     ~LuaPlugin();
 
     LuaPlugin(const LuaPlugin&) = delete;

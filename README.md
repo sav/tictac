@@ -18,6 +18,9 @@ Pre-1.0. The on-disk format is not committed-to; rebuild the database after pull
 - CMake 3.20+
 - SQLite 3 development headers (`libsqlite3-dev` on Debian/Ubuntu, `sqlite-devel` on Fedora)
 - Internet access on the first configure (CMake `FetchContent` pulls the chess library, Catch2, and Lua 5.4)
+- *(Optional)* Qt6 or Qt5 Widgets dev files for the `--viz` board browser
+  (`qt6-base-dev` or `qtbase5-dev` on Debian/Ubuntu). Pass
+  `-DTICTAC_BUILD_VIZ=OFF` to skip the dependency.
 
 ## Build
 
@@ -51,11 +54,12 @@ The binary lands at `build/src/tictac` (or `build-debug/src/tictac`).
 
 ### CMake options
 
-| Option                       | Default | Description                       |
-| ---------------------------- | ------- | --------------------------------- |
-| `TICTAC_BUILD_TESTS`         | `ON`    | Build the Catch2 test suite       |
-| `TICTAC_BUILD_BENCH`         | `OFF`   | Build benchmarks (under `bench/`) |
-| `TICTAC_ENABLE_SANITIZERS`   | `OFF`   | Compile with ASan + UBSan         |
+| Option                       | Default | Description                                        |
+| ---------------------------- | ------- | -------------------------------------------------- |
+| `TICTAC_BUILD_TESTS`         | `ON`    | Build the Catch2 test suite                        |
+| `TICTAC_BUILD_BENCH`         | `OFF`   | Build benchmarks (under `bench/`)                  |
+| `TICTAC_ENABLE_SANITIZERS`   | `OFF`   | Compile with ASan + UBSan                          |
+| `TICTAC_BUILD_VIZ`           | `ON`    | Build the Qt board browser (`--viz`); needs Qt5/6  |
 
 Example with sanitizers:
 
@@ -258,6 +262,9 @@ Sample plugins live under `examples/plugins/`:
 - `puzzles.lua` — mine tactical puzzles by scanning every ply for an eval
   swing followed by an "only move"; prints the FEN of each puzzle position
   (requires `--engine`).
+- `viz_browser.lua` — feeds every accepted game's final FEN into the Qt
+  board browser so you can step through results visually with prev/next
+  buttons (requires `--viz`).
 
 ```sh
 ./build/src/tictac search opening e4 c5 \
@@ -333,6 +340,49 @@ Notes:
   parse errors) and surfaces them as Lua errors that abort the search with
   exit status 2.
 
+### `--viz` — Qt board browser
+
+`search position` and `search opening` accept `--viz` to open a Qt window
+**after** the search completes. The window has a chess board on the right,
+a free-form info panel on the left, and Prev / Next / Close buttons; you
+step through entries the plugin queued during the search.
+
+```sh
+tictac search opening e4 c5 \
+  --plugin examples/viz_browser.lua \
+  --viz \
+  --limit 10
+```
+
+#### Visualization API (Lua)
+
+```lua
+-- Append one entry to the browse buffer. Both arguments are required to
+-- be strings; integers should be tostring()'d on the Lua side.
+tictac.viz.add(fen, {
+    white     = game.white,
+    black     = game.black,
+    white_elo = tostring(game.white_elo),
+    result    = game.result,
+    -- ... any other key/value pairs you want shown on the left panel
+})
+
+-- Number of entries currently buffered.
+local n = tictac.viz.count()
+```
+
+Notes:
+
+- `tictac.viz` is only registered when `--viz` is supplied. Plugins that
+  rely on it should bail early, e.g. `if not tictac or not tictac.viz then
+  error("requires --viz") end`.
+- The browser runs **after** the search loop finishes — entries are
+  buffered, not streamed. Closing the window returns control to the
+  caller.
+- Build-time: visualization is compiled when CMake finds Qt6 or Qt5
+  Widgets at configure time (`TICTAC_BUILD_VIZ=ON` by default; pass
+  `-DTICTAC_BUILD_VIZ=OFF` to skip the dependency entirely).
+
 ### `stats` — summarize a database
 
 ```
@@ -393,6 +443,7 @@ Useful tags:
 | `[lua]`     | `--plugin` Lua integration                                   |
 | `[engine]`  | `--engine` UCI integration                                   |
 | `[clipboard]` | `import clipboard` (skipped when no clipboard tool found)  |
+| `[viz]`     | FEN board model + `VizSession` lifecycle (offscreen Qt)      |
 
 The CLI suite drives the in-process binary and captures stdout/stderr at the
 file-descriptor level, so it covers both C++ (`std::cout`) and C (Lua's
@@ -420,6 +471,8 @@ src/
   search/     SearchEngine (position + opening queries)
   plugin/     LuaPlugin -- loads .lua filters for `search --plugin`
   engine/     EngineInterface + UciEngine -- UCI subprocess wrapper
+  viz/        Qt board browser (BoardModel + BoardWidget +
+              BoardWindow + VizSession); compiled when Qt is found
   main.cpp    Thin entry point — instantiates CliApp
 tests/        Catch2 tests + PGN fixtures
 bench/        Benchmarks (off by default)
