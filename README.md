@@ -1,6 +1,6 @@
 # tictac
 
-Chess PGN database analyzer. Imports PGN files into an on-disk store, then answers two kinds of queries fast:
+Chess PGN database analyzer. The name nods at "tactic" — the original motivation was mining PGN archives for fresh tactical puzzles. Imports PGN files into an on-disk store, then answers two kinds of queries fast:
 
 - **Position search** — given a FEN, find games that reach that exact board state.
 - **Opening search** — given a sequence of SAN moves, find games whose opening matches that prefix.
