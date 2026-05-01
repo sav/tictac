@@ -60,7 +60,18 @@
       "Bash(./build-debug/src/tictac stats *)",
       "Bash(./build-debug/src/tictac *)",
       "Bash(./build-debug/tests/tictac_tests \"[cli][help]\")",
-      "Bash(./build-debug/tests/tictac_tests)"
+      "Bash(./build-debug/tests/tictac_tests)",
+      "Bash(mkdir -p /tmp/tictac_puzzle_test)",
+      "Read(//tmp/**)",
+      "Bash(rm -rf /tmp/tictac_puzzle_test/db)",
+      "Bash(/home/sav/my/src/tictac/build-debug/src/tictac -q import /tmp/tictac_puzzle_test/opera.pgn --db /tmp/tictac_puzzle_test/db)",
+      "Bash(echo \"---EXIT: $?\")",
+      "Bash(echo \"rc=$?\")",
+      "Read(//home/sav/tictac/**)",
+      "Bash(/home/sav/my/src/tictac/sandbox/tictac stats *)",
+      "Bash(timeout 300 ./tictac -q search opening e4 e5 --plugin /home/sav/my/src/tictac/examples/puzzles.lua --engine stockfish --engine-option Threads=1 --engine-option Hash=128 --limit 5)",
+      "Bash(tee /tmp/puzzle_run.txt)",
+      "Bash(echo \"---EXIT=$?---\")"
     ]
   }
 }
