@@ -1,5 +1,8 @@
 include(FetchContent)
 
+# SQLite3 (system) -- backs the sequence index
+find_package(SQLite3 REQUIRED)
+
 # chess-library by Disservin (header-only, C++17, uses Meson -- no CMake target)
 FetchContent_Declare(
     chess_library

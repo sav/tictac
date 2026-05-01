@@ -18,7 +18,7 @@ add_library(tictac_lib STATIC
 target_include_directories(tictac_lib PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(tictac_lib
     PUBLIC chess_lib CLI11::CLI11 tictac_warnings
-    PRIVATE Threads::Threads lua_lib
+    PRIVATE Threads::Threads lua_lib SQLite::SQLite3
 )
 
 add_executable(tictac main.cpp)
