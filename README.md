@@ -255,6 +255,17 @@ Sample plugins live under `examples/plugins/`:
   iterate the opening moves with `game:moves()`.
 - `engine_eval.lua` — evaluate the final position with a UCI engine and keep
   balanced endings (requires `--engine`).
+- `puzzles.lua` — mine tactical puzzles by scanning every ply for an eval
+  swing followed by an "only move"; prints the FEN of each puzzle position
+  (requires `--engine`).
+
+```sh
+./build/src/tictac search opening e4 \
+  --plugin examples/puzzles.lua \
+  --engine /usr/games/stockfish \
+  --engine-option Threads=1 --engine-option Hash=64 \
+  --limit 500
+```
 
 ### `--engine` — UCI engine integration
 
