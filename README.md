@@ -260,12 +260,16 @@ Sample plugins live under `examples/plugins/`:
   (requires `--engine`).
 
 ```sh
-./build/src/tictac search opening e4 \
+./build/src/tictac search opening e4 c5 \
   --plugin examples/puzzles.lua \
   --engine /usr/games/stockfish \
-  --engine-option Threads=1 --engine-option Hash=64 \
-  --limit 500
+  --engine-option Threads=1 --engine-option Hash=128 \
+  --limit 20
 ```
+
+The plugin runs a cheap single-PV scan first and only re-evaluates the
+flagged plies at higher depth with MultiPV, so a broad opening prefix is
+viable. `--limit 20` caps total puzzles emitted (one per accepted game).
 
 ### `--engine` — UCI engine integration
 
