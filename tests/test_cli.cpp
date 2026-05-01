@@ -222,6 +222,32 @@ TEST_CASE("import clipboard reads PGN from the system clipboard", "[cli][import]
 
 // ---------- search ----------
 
+TEST_CASE("partial command prints only the matched subcommand's help", "[cli][help]") {
+    // `tictac search` (no sub-sub) should narrow to the search node — list
+    // its three children and *not* leak peer subcommands like `import` or
+    // `stats` from the top-level overview.
+    auto r = run_cli({"search"});
+    REQUIRE(r.rc == 0);
+    CHECK(contains(r.err, "Search the database"));
+    CHECK(contains(r.err, "position"));
+    CHECK(contains(r.err, "opening"));
+    CHECK(contains(r.err, "id"));
+    CHECK_FALSE(contains(r.err, "Import PGN"));
+    CHECK_FALSE(contains(r.err, "Show database statistics"));
+}
+
+TEST_CASE("bare invocation prints the full overview", "[cli][help]") {
+    // No subcommand selected — keep the discovery view that lists every
+    // top-level command so newcomers can find their way around.
+    auto r = run_cli({});
+    REQUIRE(r.rc == 0);
+    CHECK(contains(r.err, "tictac - Chess PGN Database Analyzer"));
+    CHECK(contains(r.err, "import"));
+    CHECK(contains(r.err, "search"));
+    CHECK(contains(r.err, "stats"));
+    CHECK(contains(r.err, "compact"));
+}
+
 TEST_CASE("search opening matches by SAN prefix and reports 'no games' otherwise", "[cli][search]") {
     auto db = fresh_dir("search_open");
     REQUIRE(run_cli({"import", (kFixtures / "multi_game.pgn").string(),

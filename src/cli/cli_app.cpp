@@ -50,6 +50,18 @@ bool read_clipboard(std::string& out) {
     return false;
 }
 
+/// Walk down `get_subcommands()` (which lists the subcommands actually
+/// matched on the command line) to find the deepest one the user reached.
+/// Returns `&app` itself when no subcommand was selected.
+const CLI::App* deepest_selected(const CLI::App& app) {
+    const CLI::App* cur = &app;
+    while (true) {
+        auto picked = cur->get_subcommands();
+        if (picked.empty()) return cur;
+        cur = picked.front();
+    }
+}
+
 /// Print top-level help plus a per-leaf section so every option (including
 /// those nested two levels deep, like `search position --plugin`) is visible
 /// in a single `--help` invocation.
@@ -171,7 +183,16 @@ int CliApp::run(int argc, char* argv[]) {
         return 0;
     } catch (const CLI::ParseError& e) {
         if (std::string(e.get_name()) == "RequiredError") {
-            print_full_help(std::cerr, app);
+            const CLI::App* leaf = deepest_selected(app);
+            if (leaf == &app) {
+                // Nothing was selected — show the full overview so the user
+                // can discover the available subcommands.
+                print_full_help(std::cerr, app);
+            } else {
+                // Partial command (e.g. `tictac search`) — narrow help to
+                // just that node so output is scoped to what the user typed.
+                std::cerr << leaf->help();
+            }
             return 0;
         }
         return app.exit(e);
