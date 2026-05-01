@@ -108,6 +108,8 @@ int CliApp::run(int argc, char* argv[]) {
     app.require_subcommand(1);
     app.set_help_flag();
     app.set_help_all_flag("-h,--help", "Print this help message and exit");
+    app.add_flag("-q,--quiet", quiet_,
+                 "Suppress engine and loader progress logs (plugin output is never suppressed)");
 
     std::string db_path_str = "tictac_db";
 
@@ -210,7 +212,7 @@ int CliApp::cmd_import(const std::filesystem::path& input,
 
     seq_idx.load();
 
-    ImportPipeline pipeline(store, pos_idx, seq_idx, manifest);
+    ImportPipeline pipeline(store, pos_idx, seq_idx, manifest, quiet_);
 
     ImportStats stats;
     if (input == "clipboard") {
@@ -224,40 +226,46 @@ int CliApp::cmd_import(const std::filesystem::path& input,
             std::cerr << "Clipboard is empty.\n";
             return 2;
         }
-        std::cout << "Importing clipboard (" << pgn.size() << " bytes):\n";
+        if (!quiet_) std::cout << "Importing clipboard (" << pgn.size() << " bytes):\n";
         std::istringstream iss(std::move(pgn));
         stats = pipeline.import_stream(iss);
-        std::cout << "  -> " << stats.games_imported << " games";
-        if (stats.parse_errors > 0)
-            std::cout << " (" << stats.parse_errors << " errors)";
-        std::cout << "\n";
-    } else if (std::filesystem::is_directory(input)) {
-        stats = pipeline.import_directory(input);
-    } else {
-        std::cout << "Importing " << input.filename() << ":\n";
-        stats = pipeline.import_file(input);
-        if (stats.files_skipped > 0) {
-            std::cout << "  skipped (already indexed)\n";
-        } else {
+        if (!quiet_) {
             std::cout << "  -> " << stats.games_imported << " games";
             if (stats.parse_errors > 0)
                 std::cout << " (" << stats.parse_errors << " errors)";
             std::cout << "\n";
         }
+    } else if (std::filesystem::is_directory(input)) {
+        stats = pipeline.import_directory(input);
+    } else {
+        if (!quiet_) std::cout << "Importing " << input.filename() << ":\n";
+        stats = pipeline.import_file(input);
+        if (!quiet_) {
+            if (stats.files_skipped > 0) {
+                std::cout << "  skipped (already indexed)\n";
+            } else {
+                std::cout << "  -> " << stats.games_imported << " games";
+                if (stats.parse_errors > 0)
+                    std::cout << " (" << stats.parse_errors << " errors)";
+                std::cout << "\n";
+            }
+        }
     }
 
-    std::cout << "Compacting position index..." << std::flush;
+    if (!quiet_) std::cout << "Compacting position index..." << std::flush;
     pos_idx.compact();
-    std::cout << " done\n";
+    if (!quiet_) std::cout << " done\n";
 
-    std::cout << "Saving sequence index..." << std::flush;
+    if (!quiet_) std::cout << "Saving sequence index..." << std::flush;
     seq_idx.save();
-    std::cout << " done\n";
+    if (!quiet_) std::cout << " done\n";
 
     manifest.save();
 
-    std::cout << "Total: " << stats.games_imported << " games imported, "
-              << store.count() << " games in database\n";
+    if (!quiet_) {
+        std::cout << "Total: " << stats.games_imported << " games imported, "
+                  << store.count() << " games in database\n";
+    }
 
     return 0;
 }

@@ -132,17 +132,40 @@ bool contains(std::string_view haystack, std::string_view needle) {
 
 // ---------- import ----------
 
-TEST_CASE("import <file> ingests games and prints assigned IDs", "[cli][import]") {
+TEST_CASE("import <file> ingests games and reports a total", "[cli][import]") {
     auto db = fresh_dir("import_file");
     auto r = run_cli({"import", (kFixtures / "multi_game.pgn").string(),
                       "--db", db.string()});
     REQUIRE(r.rc == 0);
     CHECK(contains(r.out, "Importing"));
-    CHECK(contains(r.out, "#0 Alpha vs Beta"));
-    CHECK(contains(r.out, "#1 Gamma vs Delta"));
-    CHECK(contains(r.out, "#2 Epsilon vs Zeta"));
     CHECK(contains(r.out, "3 games"));
     CHECK(contains(r.out, "Total: 3 games imported"));
+    // Per-game lines are intentionally not printed during import; game
+    // details are only emitted by the `search` commands.
+    CHECK_FALSE(contains(r.out, "Alpha vs Beta"));
+    fs::remove_all(db);
+}
+
+TEST_CASE("import --quiet suppresses loader chatter", "[cli][import][quiet]") {
+    auto db = fresh_dir("import_quiet");
+    auto r = run_cli({"--quiet", "import", (kFixtures / "multi_game.pgn").string(),
+                      "--db", db.string()});
+    REQUIRE(r.rc == 0);
+    CHECK(r.out.empty());
+
+    // Database is still populated — the silence is cosmetic only.
+    auto stats = run_cli({"stats", "--db", db.string()});
+    REQUIRE(stats.rc == 0);
+    CHECK(contains(stats.out, "Games:    3"));
+    fs::remove_all(db);
+}
+
+TEST_CASE("-q is the short form of --quiet", "[cli][import][quiet]") {
+    auto db = fresh_dir("import_quiet_short");
+    auto r = run_cli({"-q", "import", (kFixtures / "multi_game.pgn").string(),
+                      "--db", db.string()});
+    REQUIRE(r.rc == 0);
+    CHECK(r.out.empty());
     fs::remove_all(db);
 }
 
@@ -188,7 +211,6 @@ TEST_CASE("import clipboard reads PGN from the system clipboard", "[cli][import]
     auto r = run_cli({"import", "clipboard", "--db", db.string()});
     REQUIRE(r.rc == 0);
     CHECK(contains(r.out, "Importing clipboard"));
-    CHECK(contains(r.out, "#0 Alpha vs Beta"));
     CHECK(contains(r.out, "Total: 3 games imported"));
 
     // Clipboard imports bypass the manifest — re-running re-imports the games.

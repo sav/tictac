@@ -15,25 +15,20 @@
 namespace tictac {
 
 ImportPipeline::ImportPipeline(GameStore& store, PositionIndex& pos_idx,
-                               SequenceIndex& seq_idx, DbManifest& manifest)
-    : store_(store), pos_idx_(pos_idx), seq_idx_(seq_idx), manifest_(manifest)
+                               SequenceIndex& seq_idx, DbManifest& manifest,
+                               bool quiet)
+    : store_(store), pos_idx_(pos_idx), seq_idx_(seq_idx), manifest_(manifest),
+      quiet_(quiet)
 {}
 
 namespace {
 
-/// Run the parse+index pipeline against a stream. Each newly appended game
-/// is announced on stdout with its assigned GameId.
+/// Run the parse+index pipeline against a stream.
 void run_parser(std::istream& in,
                 GameStore& store, PositionIndex& pos_idx, SequenceIndex& seq_idx,
                 ImportStats& stats) {
     auto process_game = [&](GameRecord&& game) {
         auto id = store.append(game);
-
-        std::cout << "  #" << id << ' '
-                  << (game.header.white.empty() ? "?" : game.header.white)
-                  << " vs "
-                  << (game.header.black.empty() ? "?" : game.header.black)
-                  << '\n';
 
         chess::Board board;
         pos_idx.insert(board.hash(), id, 0);
@@ -97,17 +92,19 @@ ImportStats ImportPipeline::import_directory(const std::filesystem::path& dir) {
     std::sort(pgn_files.begin(), pgn_files.end());
 
     for (const auto& pgn : pgn_files) {
-        std::cout << "Importing " << pgn.filename() << ":\n";
+        if (!quiet_) std::cout << "Importing " << pgn.filename() << ":\n";
 
         auto stats = import_file(pgn);
 
         if (stats.files_skipped > 0) {
-            std::cout << "  skipped (already indexed)\n";
+            if (!quiet_) std::cout << "  skipped (already indexed)\n";
             total_stats.files_skipped++;
         } else {
-            std::cout << "  -> " << stats.games_imported << " games";
-            if (stats.parse_errors > 0) std::cout << " (" << stats.parse_errors << " errors)";
-            std::cout << "\n";
+            if (!quiet_) {
+                std::cout << "  -> " << stats.games_imported << " games";
+                if (stats.parse_errors > 0) std::cout << " (" << stats.parse_errors << " errors)";
+                std::cout << "\n";
+            }
 
             total_stats.games_imported += stats.games_imported;
             total_stats.positions_indexed += stats.positions_indexed;

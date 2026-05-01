@@ -90,6 +90,13 @@ If `--db` is omitted everywhere, tictac uses `./tictac_db` in the current workin
 
 ## CLI reference
 
+### Global flags
+
+- `-q`, `--quiet` — suppress progress chatter from the loader (import) and the
+  engine subprocess. Search results, stats, and any output produced by a Lua
+  plugin (`print`, `io.write`) are **never** suppressed; the flag only mutes
+  housekeeping noise. Place it before the subcommand: `tictac -q import …`.
+
 ### `import` — ingest PGN
 
 ```
@@ -103,17 +110,18 @@ tictac import <input> [--db PATH]
     (probes `wl-paste`, `xclip`, `xsel` in that order).
 - `--db PATH` — database directory; created if missing. Default: `tictac_db`.
 
-For each newly ingested game the importer prints `  #ID white vs black` so the
-assigned `GameId` is visible immediately. The same ID is what plugins receive
-as `game.id`.
+The importer reports per-source progress and a final total. Per-game listings
+are intentionally omitted on import — game details are only printed by the
+`search` commands. Use `tictac search id --id N` to look up an individual
+game after ingest.
 
 ```
 tictac import clipboard --db mydb
 # Importing clipboard (417 bytes):
-#   #0 Alpha vs Beta
-#   #1 Gamma vs Delta
-#   #2 Epsilon vs Zeta
 #   -> 3 games
+# Compacting position index... done
+# Saving sequence index... done
+# Total: 3 games imported, 3 games in database
 ```
 
 The importer is incremental for **file** and **directory** inputs: re-importing

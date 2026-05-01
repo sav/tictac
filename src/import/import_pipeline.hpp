@@ -24,7 +24,8 @@ struct ImportStats {
 class ImportPipeline {
 public:
     ImportPipeline(GameStore& store, PositionIndex& pos_idx,
-                   SequenceIndex& seq_idx, DbManifest& manifest);
+                   SequenceIndex& seq_idx, DbManifest& manifest,
+                   bool quiet = false);
 
     /// Import a single PGN file.
     ImportStats import_file(const std::filesystem::path& pgn_path);
@@ -42,6 +43,7 @@ private:
     PositionIndex& pos_idx_;
     SequenceIndex& seq_idx_;
     DbManifest&    manifest_;
+    bool           quiet_;
 };
 
 } // namespace tictac

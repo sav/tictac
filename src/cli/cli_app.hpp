@@ -29,6 +29,10 @@ private:
     int cmd_search_id(std::uint32_t id, const std::filesystem::path& db_path);
     int cmd_stats(const std::filesystem::path& db_path);
     int cmd_compact(const std::filesystem::path& db_path);
+
+    /// When true, suppress engine and loader progress logs. Plugin output
+    /// (Lua `print`/`io.write`) and search results are unaffected.
+    bool quiet_ = false;
 };
 
 } // namespace tictac
