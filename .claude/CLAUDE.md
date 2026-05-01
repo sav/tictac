@@ -25,5 +25,6 @@ Always use the debug build when diagnosing issues or running tests. Use release 
 
 ## Commits
 
+Always make sure that you've updated both the tests and the README to reflect the latest changes before commiting.
+
 Don't use the `Co-Authored-By` tag; instead, use `Assisted-By: <MODEL>`, where `<MODEL>` is the full version of the current model used to generate the code.
- 
