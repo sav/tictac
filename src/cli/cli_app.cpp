@@ -114,12 +114,10 @@ int CliApp::run(int argc, char* argv[]) {
     // Import subcommand
     auto* import_cmd = app.add_subcommand("import", "Import PGN file(s) into the database");
     std::string import_input;
-    unsigned import_threads = 1;
     import_cmd->add_option("input", import_input,
                            "PGN file, directory, or 'clipboard' to read from the system clipboard")
         ->required();
     import_cmd->add_option("--db", db_path_str, "Database path")->default_val("tictac_db");
-    import_cmd->add_option("--threads", import_threads, "Number of threads")->default_val(1);
 
     // Search position subcommand
     auto* search_cmd = app.add_subcommand("search", "Search the database");
@@ -180,7 +178,7 @@ int CliApp::run(int argc, char* argv[]) {
     std::filesystem::path db_path(db_path_str);
 
     if (import_cmd->parsed()) {
-        return cmd_import(import_input, db_path, import_threads);
+        return cmd_import(import_input, db_path);
     }
     if (search_pos->parsed()) {
         return cmd_search_position(search_fen, db_path, search_limit, search_plugin,
@@ -204,8 +202,7 @@ int CliApp::run(int argc, char* argv[]) {
 }
 
 int CliApp::cmd_import(const std::filesystem::path& input,
-                       const std::filesystem::path& db_path,
-                       [[maybe_unused]] unsigned threads) {
+                       const std::filesystem::path& db_path) {
     GameStore store(db_path);
     PositionIndex pos_idx(db_path);
     SequenceIndex seq_idx(db_path);

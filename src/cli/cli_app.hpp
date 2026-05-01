@@ -13,8 +13,7 @@ public:
 
 private:
     int cmd_import(const std::filesystem::path& input,
-                   const std::filesystem::path& db_path,
-                   unsigned threads);
+                   const std::filesystem::path& db_path);
     int cmd_search_position(const std::string& fen,
                             const std::filesystem::path& db_path,
                             std::size_t limit,

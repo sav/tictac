@@ -9,7 +9,7 @@ It is a single C++20 binary. State lives entirely in a directory of mmap-backed 
 
 ## Status
 
-Pre-1.0. The on-disk format is not committed-to; rebuild the database after pulling. Tested on Linux. Imports are currently single-threaded regardless of `--threads` (the flag is reserved for the parallel import path that is not yet wired up).
+Pre-1.0. The on-disk format is not committed-to; rebuild the database after pulling. Tested on Linux. Imports are currently single-threaded.
 
 ## Requirements
 
@@ -93,7 +93,7 @@ If `--db` is omitted everywhere, tictac uses `./tictac_db` in the current workin
 ### `import` — ingest PGN
 
 ```
-tictac import <input> [--db PATH] [--threads N]
+tictac import <input> [--db PATH]
 ```
 
 - `<input>` — one of:
@@ -102,7 +102,6 @@ tictac import <input> [--db PATH] [--threads N]
   - the literal word `clipboard` to read PGN from the system clipboard
     (probes `wl-paste`, `xclip`, `xsel` in that order).
 - `--db PATH` — database directory; created if missing. Default: `tictac_db`.
-- `--threads N` — reserved; currently ignored (see Status).
 
 For each newly ingested game the importer prints `  #ID white vs black` so the
 assigned `GameId` is visible immediately. The same ID is what plugins receive
