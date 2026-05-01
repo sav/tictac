@@ -5,7 +5,7 @@ Chess PGN database analyzer. Imports PGN files into an on-disk store, then answe
 - **Position search** — given a FEN, find games that reach that exact board state.
 - **Opening search** — given a sequence of SAN moves, find games whose opening matches that prefix.
 
-It is a single C++20 binary with a CLI11 frontend. State lives entirely in a directory of mmap-backed files; there is no daemon, server, or external database.
+It is a single C++20 binary. State lives entirely in a directory of mmap-backed files; there is no daemon, server, or external database.
 
 ## Status
 
@@ -16,7 +16,7 @@ Pre-1.0. The on-disk format is not committed-to; rebuild the database after pull
 - C++20 compiler (GCC 11+ or Clang 14+)
 - C compiler (Lua 5.4 is built from source)
 - CMake 3.20+
-- Internet access on the first configure (CMake `FetchContent` pulls the chess library, CLI11, Catch2, and Lua 5.4)
+- Internet access on the first configure (CMake `FetchContent` pulls the chess library, Catch2, and Lua 5.4)
 
 ## Build
 
@@ -379,7 +379,7 @@ Fixtures live under `tests/fixtures/`:
 
 ```
 src/
-  cli/        CLI11 frontend (cli_app.{hpp,cpp})
+  cli/        Command-line frontend (cli_app.{hpp,cpp})
   core/       Shared types, game record
   import/     PGN parsing pipeline + visitor
   storage/    game_store, position_index, sequence_index,
