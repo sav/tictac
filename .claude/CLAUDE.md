@@ -25,6 +25,6 @@ Always use the debug build when diagnosing issues or running tests. Use release 
 
 ## Commits
 
-Always make sure that you've updated both the tests and the README to reflect the latest changes before commiting.
+Before commiting, always make sure that you've updated the tests, the examples and the README to reflect the latest changes. There's no need to actually run the tests. But remember to modify the unit tests to reflect the code you've just created.
 
 Don't use the `Co-Authored-By` tag; instead, use `Assisted-By: <MODEL>`, where `<MODEL>` is the full version of the current model used to generate the code.

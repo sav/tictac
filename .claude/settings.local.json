@@ -44,7 +44,23 @@
       "Bash(/home/sav/my/src/tictac/build/src/tictac import *)",
       "Bash(/home/sav/my/src/tictac/build/src/tictac --help)",
       "Bash(/home/sav/my/src/tictac/build/src/tictac bogus *)",
-      "Bash(wait)"
+      "Bash(wait)",
+      "Bash(/home/sav/my/src/tictac/build-debug/tests/tictac_tests)",
+      "Bash(git mv *)",
+      "Bash(rmdir examples/plugins)",
+      "Bash(rm -rf /tmp/tictac_smoke)",
+      "Bash(./build-debug/src/tictac import *)",
+      "Bash(./build-debug/src/tictac -q import tests/fixtures/multi_game.pgn --db /tmp/tictac_smoke)",
+      "Bash(echo \"\\(exit $?\\)\")",
+      "Bash(git restore *)",
+      "Bash(rm -rf /tmp/tictac_repro)",
+      "Bash(/home/sav/my/src/tictac/build-debug/src/tictac -q import /home/sav/my/src/tictac/tests/fixtures/multi_game.pgn --db /tmp/tictac_repro)",
+      "Bash(cat)",
+      "Bash(/home/sav/my/src/tictac/build-debug/src/tictac -q import /tmp/test_openings.pgn --db /tmp/tictac_repro)",
+      "Bash(./build-debug/src/tictac stats *)",
+      "Bash(./build-debug/src/tictac *)",
+      "Bash(./build-debug/tests/tictac_tests \"[cli][help]\")",
+      "Bash(./build-debug/tests/tictac_tests)"
     ]
   }
 }
