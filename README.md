@@ -16,6 +16,7 @@ Pre-1.0. The on-disk format is not committed-to; rebuild the database after pull
 - C++20 compiler (GCC 11+ or Clang 14+)
 - C compiler (Lua 5.4 is built from source)
 - CMake 3.20+
+- SQLite 3 development headers (`libsqlite3-dev` on Debian/Ubuntu, `sqlite-devel` on Fedora)
 - Internet access on the first configure (CMake `FetchContent` pulls the chess library, Catch2, and Lua 5.4)
 
 ## Build
@@ -327,7 +328,7 @@ A tictac database is a directory. After `import` it contains:
   games.dat           # packed game records (header + compact moves)
   games.idx           # offset table indexed by GameId
   pos_index/          # Zobrist-hash position index (sharded)
-  sequence_trie.dat   # opening trie, first 30 plies
+  sequence_trie.sqlite # SQLite DB backing the opening trie, first 30 plies
 ```
 
 The trie depth (30 plies = 15 full moves) is fixed at construction. Searching with more plies than that returns no results.
