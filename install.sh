@@ -1,76 +1,85 @@
 #!/usr/bin/env bash
-# Install all build/runtime dependencies for tictac on Ubuntu / Debian.
+# Install (or uninstall) the tictac binary system-wide.
 #
 # Usage:
-#   ./install.sh                # install required + all optional
-#   ./install.sh --no-viz       # skip Qt (no --viz support)
-#   ./install.sh --no-engine    # skip Stockfish (no --engine support)
-#   ./install.sh --no-clipboard # skip xclip / wl-clipboard
-#   ./install.sh --qt6          # use Qt6 instead of Qt5 for --viz
+#   ./install.sh                  # install build/src/tictac to /usr/local/bin
+#   ./install.sh --uninstall      # remove a previously installed copy
+#   ./install.sh --prefix PATH    # custom prefix (default: /usr/local)
 #
-# After this script completes, run ./build.sh (and optionally
-# ./build.sh -debug) to compile.
+# Requires that ./build.sh has produced build/src/tictac. Use ./config.sh
+# first if you still need to install the build dependencies.
+#
+# Files placed:
+#   <prefix>/bin/tictac
+#   <prefix>/share/tictac/examples/*.lua
+# Uninstall removes both.
 
 set -euo pipefail
 
-if ! command -v apt-get >/dev/null 2>&1; then
-    echo "error: apt-get not found — this script supports Ubuntu / Debian only." >&2
-    echo "See README.md for Fedora and other distributions." >&2
-    exit 1
-fi
+prefix=/usr/local
+mode=install
 
-want_viz=1
-want_engine=1
-want_clipboard=1
-qt_major=5
-
-for arg in "$@"; do
-    case "$arg" in
-        --no-viz)       want_viz=0 ;;
-        --no-engine)    want_engine=0 ;;
-        --no-clipboard) want_clipboard=0 ;;
-        --qt6)          qt_major=6 ;;
-        --qt5)          qt_major=5 ;;
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --uninstall)   mode=uninstall ;;
+        --prefix)      prefix="$2"; shift ;;
+        --prefix=*)    prefix="${1#--prefix=}" ;;
         -h|--help)
-            sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         *)
-            echo "error: unknown option: $arg" >&2
+            echo "error: unknown option: $1" >&2
             echo "run with --help for usage." >&2
             exit 1
             ;;
     esac
+    shift
 done
 
-pkgs=(build-essential cmake git libsqlite3-dev)
+bin_dst="$prefix/bin/tictac"
+share_dst="$prefix/share/tictac"
 
-if [[ $want_viz -eq 1 ]]; then
-    if [[ $qt_major -eq 6 ]]; then
-        pkgs+=(qt6-base-dev qt6-svg-dev)
-    else
-        pkgs+=(qtbase5-dev libqt5svg5-dev)
-    fi
+# Use sudo only when we can't write to the destination ourselves (typical
+# /usr/local case). Custom prefixes under $HOME work without elevation.
+needs_sudo() {
+    local target="$1"
+    while [[ ! -e "$target" ]]; do target="$(dirname "$target")"; done
+    [[ ! -w "$target" ]]
+}
+
+sudo_cmd=
+if needs_sudo "$prefix"; then
+    sudo_cmd=sudo
 fi
 
-if [[ $want_engine -eq 1 ]]; then
-    pkgs+=(stockfish)
+if [[ "$mode" == "uninstall" ]]; then
+    echo "removing:"
+    echo "  $bin_dst"
+    echo "  $share_dst/"
+    $sudo_cmd rm -f "$bin_dst"
+    $sudo_cmd rm -rf "$share_dst"
+    echo "done."
+    exit 0
 fi
 
-if [[ $want_clipboard -eq 1 ]]; then
-    pkgs+=(xclip wl-clipboard)
+root="$(cd "$(dirname "$0")" && pwd)"
+bin_src="$root/build/src/tictac"
+if [[ ! -x "$bin_src" ]]; then
+    echo "error: $bin_src not found." >&2
+    echo "run ./build.sh first to produce a release binary." >&2
+    exit 1
 fi
 
-echo "tictac will install:"
-printf '  %s\n' "${pkgs[@]}"
+echo "installing to $prefix:"
+echo "  $bin_dst"
+echo "  $share_dst/examples/"
 echo
 
-sudo apt-get update
-sudo apt-get install -y "${pkgs[@]}"
+$sudo_cmd install -Dm755 "$bin_src" "$bin_dst"
+$sudo_cmd install -d "$share_dst/examples"
+$sudo_cmd install -m644 "$root/examples"/*.lua "$share_dst/examples/"
 
-cat <<EOF
-
-Done. Next steps:
-  ./build.sh           # release build at build/src/tictac
-  ./build.sh -debug    # debug build at build-debug/src/tictac
-EOF
+echo
+echo "done. tictac is on your PATH if $prefix/bin is."
+echo "uninstall later with: $0 --uninstall${prefix:+ --prefix $prefix}"

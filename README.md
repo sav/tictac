@@ -24,13 +24,13 @@ Pre-1.0. The on-disk format is not committed-to; rebuild the database after pull
 
 ### Ubuntu / Debian
 
-There's a wrapper that installs everything in one shot:
+`config.sh` installs the build dependencies in one shot:
 
 ```sh
-./install.sh                  # required + all optional (defaults to Qt5)
-./install.sh --qt6            # use Qt6 instead of Qt5 for --viz
-./install.sh --no-viz         # skip the Qt dep entirely
-./install.sh --help           # see all flags
+./config.sh                   # required + all optional (defaults to Qt5)
+./config.sh --qt6             # use Qt6 instead of Qt5 for --viz
+./config.sh --no-viz          # skip the Qt dep entirely
+./config.sh --help            # see all flags
 ```
 
 Manual equivalent if you prefer to run apt yourself:
@@ -89,6 +89,20 @@ Or use the wrapper script:
 ```
 
 The binary lands at `build/src/tictac` (or `build-debug/src/tictac`).
+
+### Install / uninstall
+
+`install.sh` copies the release binary to `/usr/local/bin/tictac` and the
+sample Lua plugins to `/usr/local/share/tictac/examples/`. It uses `sudo`
+only when the destination prefix isn't writable by the current user.
+
+```sh
+./build.sh                    # produce build/src/tictac first
+./install.sh                  # install to /usr/local
+./install.sh --prefix ~/.local
+./install.sh --uninstall
+./install.sh --uninstall --prefix ~/.local
+```
 
 ### CMake options
 
