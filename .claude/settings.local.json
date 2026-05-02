@@ -81,7 +81,9 @@
       "Bash(QT_QPA_PLATFORM=offscreen timeout 10 ./build-debug/src/tictac search opening e4 e5 --plugin examples/viz_browser.lua --viz --db /tmp/tictac_puzzle_test/db --limit 2)",
       "Bash(dpkg -L chessx)",
       "Bash(grep -E '\\\\.\\(svg|png\\)$')",
-      "Bash(pkg-config --modversion Qt5Svg)"
+      "Bash(pkg-config --modversion Qt5Svg)",
+      "Bash(chmod +x /home/sav/my/src/tictac/install.sh)",
+      "Bash(./install.sh *)"
     ]
   }
 }
