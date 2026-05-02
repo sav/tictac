@@ -83,7 +83,9 @@
       "Bash(grep -E '\\\\.\\(svg|png\\)$')",
       "Bash(pkg-config --modversion Qt5Svg)",
       "Bash(chmod +x /home/sav/my/src/tictac/install.sh)",
-      "Bash(./install.sh *)"
+      "Bash(./install.sh *)",
+      "Read(//home/sav/**)",
+      "Bash(QT_QPA_PLATFORM=offscreen timeout 5 /home/sav/tictac/tictac search opening e4 c5 --plugin /home/sav/my/src/tictac/examples/viz_browser.lua --viz --db /home/sav/tictac/tictac_db --limit 1)"
     ]
   }
 }
