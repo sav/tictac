@@ -203,6 +203,26 @@ tictac search position <fen> [--db PATH] [--limit N]
 
 Output lists `Game #<id> (ply <n>)` with the white/black names, event, and date when available. Results are verified by replaying the game from move 1 to guard against Zobrist collisions.
 
+### `search name` — match games by player name (regex)
+
+```
+tictac search name <pattern> [--db PATH] [--limit N]
+```
+
+- `<pattern>` — ECMAScript regex, **case-insensitive**, matched against both
+  the white and the black header.
+- `--limit N` — max results returned. Default: `20`.
+
+There is no name index — this scans the database in id order and returns
+the first `--limit` games that match. Use anchors (`^Carlsen$`) or
+alternation (`carlsen|nakamura`) to narrow.
+
+```sh
+tictac search name "carlsen|nakamura"
+tictac search name "^Magnus "
+tictac search name "kasparov"
+```
+
 ### `search opening` — find games whose opening matches a SAN prefix
 
 ```

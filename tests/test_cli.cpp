@@ -292,6 +292,37 @@ TEST_CASE("search position finds games at a specific FEN", "[cli][search]") {
     fs::remove_all(db);
 }
 
+TEST_CASE("search name matches white or black via case-insensitive regex",
+          "[cli][search]") {
+    auto db = fresh_dir("search_name");
+    REQUIRE(run_cli({"import", (kFixtures / "multi_game.pgn").string(),
+                     "--db", db.string()}).rc == 0);
+
+    // Plain substring
+    auto r = run_cli({"search", "name", "Alpha", "--db", db.string()});
+    REQUIRE(r.rc == 0);
+    CHECK(contains(r.out, "Alpha vs Beta"));
+    CHECK_FALSE(contains(r.out, "Gamma vs Delta"));
+
+    // Case-insensitive + alternation
+    auto r2 = run_cli({"search", "name", "epsilon|gamma", "--db", db.string()});
+    REQUIRE(r2.rc == 0);
+    CHECK(contains(r2.out, "Gamma vs Delta"));
+    CHECK(contains(r2.out, "Epsilon vs Zeta"));
+
+    // Empty result
+    auto miss = run_cli({"search", "name", "Carlsen", "--db", db.string()});
+    REQUIRE(miss.rc == 0);
+    CHECK(contains(miss.out, "No games found"));
+
+    // Bad regex
+    auto bad = run_cli({"search", "name", "[unclosed", "--db", db.string()});
+    CHECK(bad.rc != 0);
+    CHECK(contains(bad.err, "Invalid regex"));
+
+    fs::remove_all(db);
+}
+
 TEST_CASE("search id loads a game by its assigned ID", "[cli][search]") {
     auto db = fresh_dir("search_id");
     REQUIRE(run_cli({"import", (kFixtures / "multi_game.pgn").string(),

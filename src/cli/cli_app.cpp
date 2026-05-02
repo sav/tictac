@@ -7,6 +7,7 @@
 #include <iostream>
 #include <fstream>
 #include <memory>
+#include <regex>
 #include <sstream>
 
 #include "chess.hpp"
@@ -165,6 +166,15 @@ int CliApp::run(int argc, char* argv[]) {
     search_id_cmd->add_option("--id", search_id, "Game ID")->required();
     search_id_cmd->add_option("--db", db_path_str, "Database path")->default_val("tictac_db");
 
+    // Search by player name (regex) subcommand
+    auto* search_name_cmd = search_cmd->add_subcommand(
+        "name", "Search games whose white or black player matches a regex");
+    std::string search_name_pattern;
+    search_name_cmd->add_option("pattern", search_name_pattern,
+        "Regex pattern (ECMAScript, case-insensitive)")->required();
+    search_name_cmd->add_option("--db", db_path_str, "Database path")->default_val("tictac_db");
+    search_name_cmd->add_option("--limit", search_limit, "Maximum results")->default_val(20);
+
     // Search opening subcommand
     auto* search_open = search_cmd->add_subcommand("opening", "Search by opening moves (SAN)");
     std::vector<std::string> search_moves;
@@ -241,6 +251,9 @@ int CliApp::run(int argc, char* argv[]) {
     }
     if (search_id_cmd->parsed()) {
         return cmd_search_id(search_id, db_path);
+    }
+    if (search_name_cmd->parsed()) {
+        return cmd_search_name(search_name_pattern, db_path, search_limit);
     }
     if (stats_cmd->parsed()) {
         return cmd_stats(db_path);
@@ -485,6 +498,51 @@ int CliApp::cmd_search_opening(const std::vector<std::string>& moves,
 #ifdef TICTAC_HAVE_VIZ
     if (viz_session && viz_session->size() > 0) viz_session->run();
 #endif
+
+    return 0;
+}
+
+int CliApp::cmd_search_name(const std::string& pattern_str,
+                            const std::filesystem::path& db_path,
+                            std::size_t limit) {
+    std::regex pattern;
+    try {
+        pattern = std::regex(pattern_str,
+                             std::regex::ECMAScript | std::regex::icase);
+    } catch (const std::regex_error& e) {
+        std::cerr << "Invalid regex: " << e.what() << "\n";
+        return 2;
+    }
+
+    GameStore store(db_path);
+    const auto total = store.count();
+
+    std::vector<GameRecord> hits;
+    for (GameId id = 0; id < total && hits.size() < limit; ++id) {
+        try {
+            GameRecord game = store.load(id);
+            if (std::regex_search(game.header.white, pattern) ||
+                std::regex_search(game.header.black, pattern)) {
+                hits.push_back(std::move(game));
+            }
+        } catch (...) {
+            // skip games that fail to load (corrupted entry)
+        }
+    }
+
+    if (hits.empty()) {
+        std::cout << "No games found.\n";
+        return 0;
+    }
+
+    std::cout << hits.size() << " game(s) found:\n\n";
+    for (const auto& g : hits) {
+        std::cout << "  Game #" << g.id << ": "
+                  << g.header.white << " vs " << g.header.black;
+        if (!g.header.event.empty()) std::cout << " [" << g.header.event << "]";
+        if (!g.header.date.empty()) std::cout << " " << g.header.date;
+        std::cout << "\n";
+    }
 
     return 0;
 }

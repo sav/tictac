@@ -29,6 +29,9 @@ private:
                            const std::vector<std::string>& engine_options,
                            bool viz);
     int cmd_search_id(std::uint32_t id, const std::filesystem::path& db_path);
+    int cmd_search_name(const std::string& pattern,
+                        const std::filesystem::path& db_path,
+                        std::size_t limit);
     int cmd_stats(const std::filesystem::path& db_path);
     int cmd_compact(const std::filesystem::path& db_path);
     int cmd_load(const std::filesystem::path& pgn_path,
