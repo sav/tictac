@@ -6,6 +6,7 @@
 #   ./config.sh --no-viz       # skip Qt (no --viz support)
 #   ./config.sh --no-engine    # skip Stockfish (no --engine support)
 #   ./config.sh --no-clipboard # skip xclip / wl-clipboard
+#   ./config.sh --no-plot      # skip gnuplot (analyze_game.lua won't plot)
 #   ./config.sh --qt6          # use Qt6 instead of Qt5 for --viz
 #
 # After this script completes, run ./build.sh (and optionally
@@ -22,6 +23,7 @@ fi
 want_viz=1
 want_engine=1
 want_clipboard=1
+want_plot=1
 qt_major=5
 
 for arg in "$@"; do
@@ -29,10 +31,11 @@ for arg in "$@"; do
         --no-viz)       want_viz=0 ;;
         --no-engine)    want_engine=0 ;;
         --no-clipboard) want_clipboard=0 ;;
+        --no-plot)      want_plot=0 ;;
         --qt6)          qt_major=6 ;;
         --qt5)          qt_major=5 ;;
         -h|--help)
-            sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'
             exit 0
             ;;
         *)
@@ -59,6 +62,10 @@ fi
 
 if [[ $want_clipboard -eq 1 ]]; then
     pkgs+=(xclip wl-clipboard)
+fi
+
+if [[ $want_plot -eq 1 ]]; then
+    pkgs+=(gnuplot)
 fi
 
 echo "tictac will install:"

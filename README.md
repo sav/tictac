@@ -19,6 +19,7 @@ Pre-1.0. The on-disk format is not committed-to; rebuild the database after pull
 - SQLite 3 development headers
 - Qt5 or Qt6 **Widgets + Svg** dev files for the `--viz` board browser
   *(optional — pass `-DTICTAC_BUILD_VIZ=OFF` to skip)*
+- `gnuplot` for the `analyze_game.lua` plot output *(optional)*
 - Internet access on the first configure (CMake `FetchContent` pulls the
   chess library, Catch2, and Lua 5.4)
 
@@ -50,6 +51,9 @@ sudo apt install stockfish
 # Optional — clipboard import (`tictac import clipboard`); install one
 sudo apt install wl-clipboard                        # Wayland
 sudo apt install xclip                               # X11
+
+# Optional — analyze_game.lua plot rendering
+sudo apt install gnuplot
 ```
 
 ### Fedora
@@ -58,6 +62,7 @@ sudo apt install xclip                               # X11
 sudo dnf install gcc-c++ cmake git sqlite-devel
 sudo dnf install qt5-qtbase-devel qt5-qtsvg-devel    # or qt6-qtbase-devel qt6-qtsvg-devel
 sudo dnf install stockfish                           # optional
+sudo dnf install gnuplot                             # optional, for analyze_game.lua
 ```
 
 ## Build
@@ -317,6 +322,12 @@ Sample plugins live under `examples/plugins/`:
 - `viz_browser.lua` — feeds every accepted game's final FEN into the Qt
   board browser so you can step through results visually with prev/next
   buttons (requires `--viz`).
+- `analyze_game.lua` — full per-ply engine analysis of each accepted game.
+  Writes three artifacts to the working directory: `game-<id>.pgn` (PGN
+  with `?!`/`?`/`??` annotations and centipawn-loss comments),
+  `game-<id>.org` (org-mode summary with accuracy %, average cp loss, and
+  a notable-moves table), and `game-<id>.png` (gnuplot-rendered eval
+  graph). Requires `--engine` and `gnuplot` on `PATH`.
 
 ```sh
 ./build/src/tictac search opening e4 c5 \
