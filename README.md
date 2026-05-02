@@ -24,6 +24,17 @@ Pre-1.0. The on-disk format is not committed-to; rebuild the database after pull
 
 ### Ubuntu / Debian
 
+There's a wrapper that installs everything in one shot:
+
+```sh
+./install.sh                  # required + all optional (defaults to Qt5)
+./install.sh --qt6            # use Qt6 instead of Qt5 for --viz
+./install.sh --no-viz         # skip the Qt dep entirely
+./install.sh --help           # see all flags
+```
+
+Manual equivalent if you prefer to run apt yourself:
+
 ```sh
 # Required
 sudo apt install build-essential cmake git libsqlite3-dev
