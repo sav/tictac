@@ -94,7 +94,11 @@
       "Bash(command -v gnuplot)",
       "Bash(rm -f game-*.pgn game-*.org game-*.png)",
       "Bash(timeout 120 /home/sav/my/src/tictac/build/src/tictac -q search opening e4 e5 --plugin /home/sav/my/src/tictac/examples/analyze_game.lua --engine /usr/games/stockfish --engine-option Threads=1 --engine-option Hash=128 --db /tmp/tictac_puzzle_test/db --limit 1)",
-      "Bash(timeout 180 /home/sav/my/src/tictac/build/src/tictac -q search opening e4 e5 --plugin /home/sav/my/src/tictac/examples/analyze_game.lua --engine /usr/games/stockfish --engine-option Threads=1 --engine-option Hash=128 --db /tmp/tictac_puzzle_test/db --limit 1)"
+      "Bash(timeout 180 /home/sav/my/src/tictac/build/src/tictac -q search opening e4 e5 --plugin /home/sav/my/src/tictac/examples/analyze_game.lua --engine /usr/games/stockfish --engine-option Threads=1 --engine-option Hash=128 --db /tmp/tictac_puzzle_test/db --limit 1)",
+      "Bash(build-debug/src/tictac load *)",
+      "Bash(build-debug/src/tictac --quiet load tests/fixtures/multi_game.pgn --plugin /tmp/load_test.lua)",
+      "Bash(build-debug/tests/tictac_tests \"[cli][load]\")",
+      "Bash(/home/sav/my/src/tictac/build-debug/tests/tictac_tests \"[cli][load]\")"
     ]
   }
 }
