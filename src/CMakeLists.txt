@@ -33,7 +33,12 @@ if(TICTAC_BUILD_VIZ)
             viz/pieces.qrc
         )
     else()
-        message(WARNING "TICTAC_BUILD_VIZ=ON but neither Qt6 nor Qt5 (Widgets+Svg) was found; building without visualization")
+        message(WARNING
+            "TICTAC_BUILD_VIZ=ON but Qt Widgets+Svg dev files were not found; "
+            "the --viz subcommand will be disabled in this build.\n"
+            "  Debian/Ubuntu:  sudo apt install libqt5svg5-dev   (or qt6-base-dev qt6-svg-dev)\n"
+            "  Fedora:         sudo dnf install qt5-qtsvg-devel  (or qt6-qtsvg-devel)\n"
+            "  Then re-run ./build.sh to pick the dependency up.")
     endif()
 endif()
 

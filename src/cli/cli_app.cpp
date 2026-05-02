@@ -324,7 +324,12 @@ int CliApp::cmd_search_position(const std::string& fen,
     if (viz) viz_session = std::make_unique<VizSession>();
 #else
     if (viz) {
-        std::cerr << "--viz: this build was compiled without Qt support\n";
+        std::cerr <<
+            "--viz: this build was compiled without Qt support.\n"
+            "Install Qt Widgets+Svg dev files and rebuild:\n"
+            "  Debian/Ubuntu:  sudo apt install libqt5svg5-dev   (or qt6-base-dev qt6-svg-dev)\n"
+            "  Fedora:         sudo dnf install qt5-qtsvg-devel  (or qt6-qtsvg-devel)\n"
+            "Then ./build.sh -debug (or ./build.sh) to re-run CMake.\n";
         return 2;
     }
 #endif
@@ -401,7 +406,12 @@ int CliApp::cmd_search_opening(const std::vector<std::string>& moves,
     if (viz) viz_session = std::make_unique<VizSession>();
 #else
     if (viz) {
-        std::cerr << "--viz: this build was compiled without Qt support\n";
+        std::cerr <<
+            "--viz: this build was compiled without Qt support.\n"
+            "Install Qt Widgets+Svg dev files and rebuild:\n"
+            "  Debian/Ubuntu:  sudo apt install libqt5svg5-dev   (or qt6-base-dev qt6-svg-dev)\n"
+            "  Fedora:         sudo dnf install qt5-qtsvg-devel  (or qt6-qtsvg-devel)\n"
+            "Then ./build.sh -debug (or ./build.sh) to re-run CMake.\n";
         return 2;
     }
 #endif
