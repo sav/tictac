@@ -71,7 +71,17 @@
       "Bash(/home/sav/my/src/tictac/sandbox/tictac stats *)",
       "Bash(timeout 300 ./tictac -q search opening e4 e5 --plugin /home/sav/my/src/tictac/examples/puzzles.lua --engine stockfish --engine-option Threads=1 --engine-option Hash=128 --limit 5)",
       "Bash(tee /tmp/puzzle_run.txt)",
-      "Bash(echo \"---EXIT=$?---\")"
+      "Bash(echo \"---EXIT=$?---\")",
+      "Bash(command -v qmake6)",
+      "Bash(qmake6 -query QT_VERSION)",
+      "Bash(pkg-config --modversion Qt6Widgets)",
+      "Bash(pkg-config --modversion Qt5Widgets)",
+      "Bash(dpkg -l)",
+      "Bash(./build-debug/tests/tictac_tests \"[viz]\")",
+      "Bash(QT_QPA_PLATFORM=offscreen timeout 10 ./build-debug/src/tictac search opening e4 e5 --plugin examples/viz_browser.lua --viz --db /tmp/tictac_puzzle_test/db --limit 2)",
+      "Bash(dpkg -L chessx)",
+      "Bash(grep -E '\\\\.\\(svg|png\\)$')",
+      "Bash(pkg-config --modversion Qt5Svg)"
     ]
   }
 }
