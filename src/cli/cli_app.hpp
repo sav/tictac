@@ -31,6 +31,11 @@ private:
     int cmd_search_id(std::uint32_t id, const std::filesystem::path& db_path);
     int cmd_stats(const std::filesystem::path& db_path);
     int cmd_compact(const std::filesystem::path& db_path);
+    int cmd_load(const std::filesystem::path& pgn_path,
+                 const std::filesystem::path& plugin_path,
+                 const std::filesystem::path& engine_path,
+                 const std::vector<std::string>& engine_options,
+                 bool viz);
 
     /// When true, suppress engine and loader progress logs. Plugin output
     /// (Lua `print`/`io.write`) and search results are unaffected.

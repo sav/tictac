@@ -9,8 +9,10 @@
 #include <memory>
 #include <sstream>
 
+#include "chess.hpp"
 #include "engine/uci_engine.hpp"
 #include "import/import_pipeline.hpp"
+#include "import/import_visitor.hpp"
 #include "plugin/lua_plugin.hpp"
 #include "search/search_engine.hpp"
 #include "storage/db_manifest.hpp"
@@ -176,6 +178,24 @@ int CliApp::run(int argc, char* argv[]) {
     search_open->add_flag("--viz", search_viz,
                           "Open a Qt window after search to browse plugin-emitted FENs");
 
+    // Load subcommand: stream a PGN file straight into a plugin without
+    // touching the database. Each game is parsed, dispatched to on_match,
+    // and discarded before the next one is read.
+    auto* load_cmd = app.add_subcommand(
+        "load", "Stream a PGN file directly into a plugin (no database writes)");
+    std::string load_input;
+    std::string load_plugin;
+    std::string load_engine;
+    std::vector<std::string> load_engine_options;
+    bool load_viz = false;
+    load_cmd->add_option("input", load_input, "PGN file")->required();
+    load_cmd->add_option("--plugin", load_plugin, "Lua plugin script (.lua)")->required();
+    load_cmd->add_option("--engine", load_engine, "UCI engine binary (e.g. stockfish)");
+    load_cmd->add_option("--engine-option", load_engine_options,
+                         "UCI option NAME=VALUE (repeatable)");
+    load_cmd->add_flag("--viz", load_viz,
+                       "Open a Qt window after the run to browse plugin-emitted FENs");
+
     // Stats subcommand
     auto* stats_cmd = app.add_subcommand("stats", "Show database statistics");
     stats_cmd->add_option("--db", db_path_str, "Database path")->default_val("tictac_db");
@@ -227,6 +247,9 @@ int CliApp::run(int argc, char* argv[]) {
     }
     if (compact_cmd->parsed()) {
         return cmd_compact(db_path);
+    }
+    if (load_cmd->parsed()) {
+        return cmd_load(load_input, load_plugin, load_engine, load_engine_options, load_viz);
     }
 
     return 0;
@@ -507,6 +530,71 @@ int CliApp::cmd_stats(const std::filesystem::path& db_path) {
     std::cout << "Database: " << db_path << "\n";
     std::cout << "Games:    " << store.count() << "\n";
     std::cout << "Position entries: " << pos_idx.total_entries() << "\n";
+
+    return 0;
+}
+
+int CliApp::cmd_load(const std::filesystem::path& pgn_path,
+                     const std::filesystem::path& plugin_path,
+                     const std::filesystem::path& engine_path,
+                     const std::vector<std::string>& engine_options,
+                     bool viz) {
+    std::ifstream file(pgn_path);
+    if (!file.is_open()) {
+        std::cerr << "Cannot open: " << pgn_path << "\n";
+        return 2;
+    }
+
+    std::unique_ptr<UciEngine> uci;
+    if (!engine_path.empty()) {
+        uci = make_engine(engine_path, engine_options);
+        if (!uci) return 2;
+    }
+
+#ifdef TICTAC_HAVE_VIZ
+    std::unique_ptr<VizSession> viz_session;
+    if (viz) viz_session = std::make_unique<VizSession>();
+#else
+    if (viz) {
+        std::cerr << "--viz: this build was compiled without Qt support.\n";
+        return 2;
+    }
+#endif
+
+    std::unique_ptr<LuaPlugin> plugin;
+    try {
+#ifdef TICTAC_HAVE_VIZ
+        plugin = std::make_unique<LuaPlugin>(plugin_path, uci.get(), viz_session.get());
+#else
+        plugin = std::make_unique<LuaPlugin>(plugin_path, uci.get());
+#endif
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << "\n";
+        return 2;
+    }
+
+    std::uint64_t games_seen = 0;
+    auto process_game = [&](GameRecord&& game) {
+        plugin->on_match(game, std::nullopt);
+        ++games_seen;
+        // game goes out of scope here — moves vector is freed before the
+        // next game is parsed, so memory stays bounded by a single game.
+    };
+
+    ImportVisitor visitor(process_game);
+    chess::pgn::StreamParser parser(file);
+    parser.readGames(visitor);
+
+    if (!quiet_) {
+        std::cout << games_seen << " game(s) streamed";
+        if (visitor.parse_errors() > 0)
+            std::cout << " (" << visitor.parse_errors() << " parse errors)";
+        std::cout << "\n";
+    }
+
+#ifdef TICTAC_HAVE_VIZ
+    if (viz_session && viz_session->size() > 0) viz_session->run();
+#endif
 
     return 0;
 }

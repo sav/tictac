@@ -459,6 +459,23 @@ Notes:
   Merida piece SVGs are bundled and licensed under GPL-2.0-or-later — see
   `assets/pieces/merida/COPYING.txt`.
 
+### `load` — stream a PGN straight into a plugin
+
+```
+tictac load <file.pgn> --plugin <plugin.lua>
+              [--engine <bin> [--engine-option NAME=VALUE ...]]
+              [--viz]
+```
+
+Parses `<file.pgn>` one game at a time and dispatches each `GameRecord` directly to the plugin's `on_match` before reading the next game. **Nothing is written to a database** — no `--db` flag, no manifest, no position/sequence indexes. Memory stays bounded by a single game regardless of file size, so this is the right choice for one-off scans of large archives where building a persistent database would be wasteful.
+
+The plugin API is the same as for `search` (`game.white`, `game.move_count`, `game:moves()`, `game:fen([ply])`, `tictac.engine`, `tictac.viz`); the `on_match` return value is ignored — there is no result set to filter. Use `tictac.viz.add(...)` or plain `print` for output.
+
+```bash
+# Print a one-line summary of every game in archive.pgn:
+tictac load archive.pgn --plugin scripts/summarize.lua
+```
+
 ### `stats` — summarize a database
 
 ```

@@ -428,6 +428,34 @@ TEST_CASE("engine flag bails when the binary cannot be started", "[cli][search][
     fs::remove_all(db);
 }
 
+// ---------- load ----------
+
+TEST_CASE("load streams every game in a PGN through the plugin", "[cli][load]") {
+    // No --db is required: load bypasses the database entirely. The plugin
+    // sees one on_match call per game and prints from Lua, which the test
+    // captures via StreamRedirect (fd-level).
+    auto plugin = (kFixtures / "filter_alpha.lua").string();
+    auto r = run_cli({"load", (kFixtures / "multi_game.pgn").string(),
+                      "--plugin", plugin});
+    REQUIRE(r.rc == 0);
+    CHECK(contains(r.out, "3 game(s) streamed"));
+}
+
+TEST_CASE("load --quiet suppresses the trailing summary", "[cli][load][quiet]") {
+    auto plugin = (kFixtures / "filter_alpha.lua").string();
+    auto r = run_cli({"--quiet", "load", (kFixtures / "multi_game.pgn").string(),
+                      "--plugin", plugin});
+    REQUIRE(r.rc == 0);
+    CHECK(r.out.empty());
+}
+
+TEST_CASE("load fails cleanly when the PGN file is missing", "[cli][load]") {
+    auto plugin = (kFixtures / "filter_alpha.lua").string();
+    auto r = run_cli({"load", "/nonexistent.pgn", "--plugin", plugin});
+    CHECK(r.rc != 0);
+    CHECK(contains(r.err, "Cannot open"));
+}
+
 // ---------- stats / compact ----------
 
 TEST_CASE("stats reports the database path, game count, and entry count", "[cli][stats]") {
