@@ -98,7 +98,9 @@
       "Bash(build-debug/src/tictac load *)",
       "Bash(build-debug/src/tictac --quiet load tests/fixtures/multi_game.pgn --plugin /tmp/load_test.lua)",
       "Bash(build-debug/tests/tictac_tests \"[cli][load]\")",
-      "Bash(/home/sav/my/src/tictac/build-debug/tests/tictac_tests \"[cli][load]\")"
+      "Bash(/home/sav/my/src/tictac/build-debug/tests/tictac_tests \"[cli][load]\")",
+      "Bash(/home/sav/my/src/tictac/build-debug/tests/tictac_tests \"search name\")",
+      "Bash(/home/sav/my/src/tictac/build-debug/tests/tictac_tests \"[cli][search]\")"
     ]
   }
 }
