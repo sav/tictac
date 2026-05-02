@@ -331,32 +331,88 @@ int l_engine_set_option(lua_State* L) {
 }
 
 #ifdef TICTAC_HAVE_VIZ
+namespace {
+
+// Drain a Lua table at the given absolute stack index into a key/value map.
+// Both keys and values are coerced to strings via lua_tolstring (so integer
+// keys / numeric values come through as their decimal representation).
+std::map<std::string, std::string> read_string_map(lua_State* L, int index) {
+    std::map<std::string, std::string> out;
+    luaL_checktype(L, index, LUA_TTABLE);
+    lua_pushnil(L);
+    while (lua_next(L, index) != 0) {
+        lua_pushvalue(L, -2);
+        std::size_t klen = 0;
+        const char* k = lua_tolstring(L, -1, &klen);
+        std::size_t vlen = 0;
+        const char* v = lua_tolstring(L, -2, &vlen);
+        if (k && v) out.emplace(std::string(k, klen), std::string(v, vlen));
+        lua_pop(L, 2);
+    }
+    return out;
+}
+
+// Drain a Lua array of strings at the given absolute stack index.
+std::vector<std::string> read_string_array(lua_State* L, int index) {
+    std::vector<std::string> out;
+    luaL_checktype(L, index, LUA_TTABLE);
+    lua_Integer n = luaL_len(L, index);
+    out.reserve(static_cast<std::size_t>(n));
+    for (lua_Integer i = 1; i <= n; ++i) {
+        lua_geti(L, index, i);
+        if (lua_isstring(L, -1)) {
+            std::size_t len = 0;
+            const char* s = lua_tolstring(L, -1, &len);
+            out.emplace_back(s, len);
+        }
+        lua_pop(L, 1);
+    }
+    return out;
+}
+
+} // namespace
+
 int l_viz_add(lua_State* L) {
     auto* viz = static_cast<VizSession*>(lua_touserdata(L, lua_upvalueindex(1)));
     if (!viz) return luaL_error(L, "tictac.viz: not initialized");
 
-    const char* fen = luaL_checkstring(L, 1);
-
+    std::string starting_fen;
+    std::vector<std::string> uci_moves;
     std::map<std::string, std::string> info;
-    if (lua_gettop(L) >= 2 && !lua_isnoneornil(L, 2)) {
-        luaL_checktype(L, 2, LUA_TTABLE);
-        lua_pushnil(L);
-        while (lua_next(L, 2) != 0) {
-            // key at -2, value at -1. Stringify both via lua_tolstring's
-            // implicit number-to-string conversion (won't disturb the
-            // iterator's original key, since we only stringify a copy).
-            lua_pushvalue(L, -2);
-            std::size_t klen = 0;
-            const char* k = lua_tolstring(L, -1, &klen);
-            std::size_t vlen = 0;
-            const char* v = lua_tolstring(L, -2, &vlen);
-            if (k && v) info.emplace(std::string(k, klen), std::string(v, vlen));
-            lua_pop(L, 2);
+
+    if (lua_isstring(L, 1)) {
+        // Back-compat: add(fen, info_table) — a single static position.
+        std::size_t fen_len = 0;
+        const char* fen = lua_tolstring(L, 1, &fen_len);
+        starting_fen.assign(fen, fen_len);
+        if (lua_gettop(L) >= 2 && !lua_isnoneornil(L, 2)) {
+            info = read_string_map(L, 2);
         }
+    } else {
+        luaL_checktype(L, 1, LUA_TTABLE);
+        lua_getfield(L, 1, "fen");
+        if (lua_isstring(L, -1)) {
+            std::size_t len = 0;
+            const char* s = lua_tolstring(L, -1, &len);
+            starting_fen.assign(s, len);
+        }
+        lua_pop(L, 1);
+
+        lua_getfield(L, 1, "moves");
+        if (lua_istable(L, -1)) {
+            uci_moves = read_string_array(L, lua_gettop(L));
+        }
+        lua_pop(L, 1);
+
+        lua_getfield(L, 1, "info");
+        if (lua_istable(L, -1)) {
+            info = read_string_map(L, lua_gettop(L));
+        }
+        lua_pop(L, 1);
     }
 
     try {
-        viz->add(fen, std::move(info));
+        viz->add(starting_fen, uci_moves, std::move(info));
     } catch (const std::exception& e) {
         return luaL_error(L, "tictac.viz.add: %s", e.what());
     }

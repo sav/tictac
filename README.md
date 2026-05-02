@@ -343,9 +343,14 @@ Notes:
 ### `--viz` — Qt board browser
 
 `search position` and `search opening` accept `--viz` to open a Qt window
-**after** the search completes. The window has a chess board on the right,
-a free-form info panel on the left, and Prev / Next / Close buttons; you
-step through entries the plugin queued during the search.
+**after** the search completes. The window has a chess board on the right
+(Merida pieces) and a free-form info panel on the left. Three buttons
+drive navigation:
+
+- **Prev / Next** step through plies *inside* the current game.
+- **Next Game** advances to the following entry (resets to ply 0).
+
+`Left` / `Right` arrows mirror Prev / Next; `PgDn` mirrors Next Game.
 
 ```sh
 tictac search opening e4 c5 \
@@ -357,15 +362,20 @@ tictac search opening e4 c5 \
 #### Visualization API (Lua)
 
 ```lua
--- Append one entry to the browse buffer. Both arguments are required to
--- be strings; integers should be tostring()'d on the Lua side.
-tictac.viz.add(fen, {
-    white     = game.white,
-    black     = game.black,
-    white_elo = tostring(game.white_elo),
-    result    = game.result,
-    -- ... any other key/value pairs you want shown on the left panel
+-- New form: queue a full game so Prev / Next can step through plies.
+tictac.viz.add({
+    fen   = "...",                     -- optional starting FEN; default = startpos
+    moves = { "e2e4", "e7e5", ... },   -- UCI moves applied from the starting FEN
+    info  = {                          -- key/value pairs shown on the left panel
+        white      = game.white,
+        black      = game.black,
+        white_elo  = tostring(game.white_elo),
+        result     = game.result,
+    },
 })
+
+-- Back-compat form: a single static position with no ply navigation.
+tictac.viz.add(fen, info_table)
 
 -- Number of entries currently buffered.
 local n = tictac.viz.count()
@@ -377,11 +387,14 @@ Notes:
   rely on it should bail early, e.g. `if not tictac or not tictac.viz then
   error("requires --viz") end`.
 - The browser runs **after** the search loop finishes — entries are
-  buffered, not streamed. Closing the window returns control to the
-  caller.
+  buffered, not streamed.
+- A move that fails to parse / apply truncates that entry's ply list at
+  the failure point; subsequent moves are dropped silently.
 - Build-time: visualization is compiled when CMake finds Qt6 or Qt5
-  Widgets at configure time (`TICTAC_BUILD_VIZ=ON` by default; pass
-  `-DTICTAC_BUILD_VIZ=OFF` to skip the dependency entirely).
+  **Widgets + Svg** at configure time (`TICTAC_BUILD_VIZ=ON` by default;
+  pass `-DTICTAC_BUILD_VIZ=OFF` to skip the dependency entirely). The
+  Merida piece SVGs are bundled and licensed under GPL-2.0-or-later — see
+  `assets/pieces/merida/COPYING.txt`.
 
 ### `stats` — summarize a database
 

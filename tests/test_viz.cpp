@@ -62,10 +62,15 @@ TEST_CASE("VizSession buffers entries without spawning a UI", "[viz][session]") 
     tictac::VizSession session;
     REQUIRE(session.size() == 0);
 
+    // A static position (no moves) — single-ply entry.
     session.add("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                {},
                 {{"white", "Alice"}, {"black", "Bob"}});
-    session.add("4k3/8/8/8/8/8/8/4K3 w - - 0 1",
+
+    // A short game from the standard startpos — 4 plies + start = 5 fens.
+    session.add("", {"e2e4", "e7e5", "g1f3", "b8c6"},
                 {{"white", "Carol"}, {"black", "Dave"}});
+
     CHECK(session.size() == 2);
 }
 #endif

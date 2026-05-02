@@ -1,6 +1,7 @@
 #include "viz/board_window.hpp"
 
 #include <QHBoxLayout>
+#include <QShortcut>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -15,8 +16,6 @@ QString to_qs(const std::string& s) {
 }
 
 QString render_info(const std::map<std::string, std::string>& info) {
-    // Stable, predictable ordering: known keys first, then anything extra
-    // alphabetical. The plugin chooses what to populate; we just display it.
     static const char* known[] = {"id", "white", "black", "white_elo",
                                   "black_elo", "result", "event", "date",
                                   "move_count"};
@@ -40,7 +39,7 @@ QString render_info(const std::map<std::string, std::string>& info) {
 
 BoardWindow::BoardWindow(std::vector<VizEntry> entries, QWidget* parent)
     : QMainWindow(parent), entries_(std::move(entries)) {
-    setWindowTitle("tictac — board browser");
+    setWindowTitle("tictac \xe2\x80\x94 board browser");
     resize(900, 560);
 
     auto* central = new QWidget(this);
@@ -59,54 +58,85 @@ BoardWindow::BoardWindow(std::vector<VizEntry> entries, QWidget* parent)
     right_col->addWidget(board_, 1);
 
     auto* btn_row = new QHBoxLayout();
-    prev_btn_    = new QPushButton("\xe2\x97\x80 Prev", central);
-    next_btn_    = new QPushButton("Next \xe2\x96\xb6", central);
+    prev_btn_      = new QPushButton("\xe2\x97\x80 Prev",   central);
+    next_btn_      = new QPushButton("Next \xe2\x96\xb6",   central);
+    next_game_btn_ = new QPushButton("Next Game \xe2\x8f\xa9", central);
     counter_label_ = new QLabel(central);
     counter_label_->setAlignment(Qt::AlignCenter);
-    auto* close_btn = new QPushButton("Close", central);
+
     btn_row->addWidget(prev_btn_);
+    btn_row->addWidget(next_btn_);
     btn_row->addStretch(1);
     btn_row->addWidget(counter_label_);
     btn_row->addStretch(1);
-    btn_row->addWidget(next_btn_);
-    btn_row->addSpacing(16);
-    btn_row->addWidget(close_btn);
+    btn_row->addWidget(next_game_btn_);
     right_col->addLayout(btn_row);
 
     hbox->addWidget(info_label_, 0);
     hbox->addLayout(right_col, 1);
     setCentralWidget(central);
 
-    QObject::connect(prev_btn_, &QPushButton::clicked, this, [this]() {
-        if (index_ > 0) show_index(index_ - 1);
-    });
-    QObject::connect(next_btn_, &QPushButton::clicked, this, [this]() {
-        if (index_ + 1 < entries_.size()) show_index(index_ + 1);
-    });
-    QObject::connect(close_btn, &QPushButton::clicked, this, &QMainWindow::close);
+    QObject::connect(prev_btn_,      &QPushButton::clicked, this, &BoardWindow::go_prev_ply);
+    QObject::connect(next_btn_,      &QPushButton::clicked, this, &BoardWindow::go_next_ply);
+    QObject::connect(next_game_btn_, &QPushButton::clicked, this, &BoardWindow::go_next_game);
 
-    if (!entries_.empty()) show_index(0);
-    else {
+    // Arrow keys mirror the buttons. PgDn jumps to the next game.
+    auto* sc_left  = new QShortcut(QKeySequence(Qt::Key_Left),     this);
+    auto* sc_right = new QShortcut(QKeySequence(Qt::Key_Right),    this);
+    auto* sc_down  = new QShortcut(QKeySequence(Qt::Key_PageDown), this);
+    QObject::connect(sc_left,  &QShortcut::activated, this, &BoardWindow::go_prev_ply);
+    QObject::connect(sc_right, &QShortcut::activated, this, &BoardWindow::go_next_ply);
+    QObject::connect(sc_down,  &QShortcut::activated, this, &BoardWindow::go_next_game);
+
+    if (!entries_.empty()) {
+        show_state();
+    } else {
         info_label_->setText("<i>no games to display</i>");
+        counter_label_->setText("0 / 0");
         prev_btn_->setEnabled(false);
         next_btn_->setEnabled(false);
-        counter_label_->setText("0 / 0");
+        next_game_btn_->setEnabled(false);
     }
 }
 
-void BoardWindow::show_index(std::size_t i) {
-    if (i >= entries_.size()) return;
-    index_ = i;
-    const auto& e = entries_[i];
-    board_->set_fen(e.fen);
-    info_label_->setText(render_info(e.info));
-    counter_label_->setText(QString("%1 / %2")
-                                .arg(static_cast<qulonglong>(i + 1))
-                                .arg(static_cast<qulonglong>(entries_.size())));
-    prev_btn_->setEnabled(i > 0);
-    next_btn_->setEnabled(i + 1 < entries_.size());
+void BoardWindow::go_prev_ply() {
+    if (ply_ == 0) return;
+    --ply_;
+    show_state();
 }
 
-void BoardWindow::rebuild_info_panel() {}
+void BoardWindow::go_next_ply() {
+    if (entries_.empty()) return;
+    const auto& cur = entries_[entry_];
+    if (ply_ + 1 >= cur.fens.size()) return;
+    ++ply_;
+    show_state();
+}
+
+void BoardWindow::go_next_game() {
+    if (entry_ + 1 >= entries_.size()) return;
+    ++entry_;
+    ply_ = 0;
+    show_state();
+}
+
+void BoardWindow::show_state() {
+    const auto& e = entries_[entry_];
+    if (e.fens.empty()) return;
+    if (ply_ >= e.fens.size()) ply_ = e.fens.size() - 1;
+    board_->set_fen(e.fens[ply_]);
+    info_label_->setText(render_info(e.info));
+
+    const std::size_t plies = e.fens.size() - 1;
+    counter_label_->setText(QString("game %1 / %2 \xc2\xb7 ply %3 / %4")
+                                .arg(static_cast<qulonglong>(entry_ + 1))
+                                .arg(static_cast<qulonglong>(entries_.size()))
+                                .arg(static_cast<qulonglong>(ply_))
+                                .arg(static_cast<qulonglong>(plies)));
+
+    prev_btn_->setEnabled(ply_ > 0);
+    next_btn_->setEnabled(ply_ + 1 < e.fens.size());
+    next_game_btn_->setEnabled(entry_ + 1 < entries_.size());
+}
 
 } // namespace tictac
