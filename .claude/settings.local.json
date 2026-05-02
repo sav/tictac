@@ -85,7 +85,12 @@
       "Bash(chmod +x /home/sav/my/src/tictac/install.sh)",
       "Bash(./install.sh *)",
       "Read(//home/sav/**)",
-      "Bash(QT_QPA_PLATFORM=offscreen timeout 5 /home/sav/tictac/tictac search opening e4 c5 --plugin /home/sav/my/src/tictac/examples/viz_browser.lua --viz --db /home/sav/tictac/tictac_db --limit 1)"
+      "Bash(QT_QPA_PLATFORM=offscreen timeout 5 /home/sav/tictac/tictac search opening e4 c5 --plugin /home/sav/my/src/tictac/examples/viz_browser.lua --viz --db /home/sav/tictac/tictac_db --limit 1)",
+      "Bash(QT_QPA_PLATFORM=offscreen timeout 4 /home/sav/my/src/tictac/build/src/tictac search opening e4 c5 --plugin /home/sav/my/src/tictac/examples/viz_browser.lua --viz --db /home/sav/tictac/tictac_db --limit 1)",
+      "Bash(./build.sh -debug)",
+      "Bash(./config.sh --help)",
+      "Bash(/home/sav/my/src/tictac/install.sh --prefix /tmp/tictac_install)",
+      "Bash(/home/sav/my/src/tictac/install.sh --prefix /tmp/tictac_install --uninstall)"
     ]
   }
 }
