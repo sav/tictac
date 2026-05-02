@@ -16,11 +16,38 @@ Pre-1.0. The on-disk format is not committed-to; rebuild the database after pull
 - C++20 compiler (GCC 11+ or Clang 14+)
 - C compiler (Lua 5.4 is built from source)
 - CMake 3.20+
-- SQLite 3 development headers (`libsqlite3-dev` on Debian/Ubuntu, `sqlite-devel` on Fedora)
-- Internet access on the first configure (CMake `FetchContent` pulls the chess library, Catch2, and Lua 5.4)
-- *(Optional)* Qt6 or Qt5 Widgets dev files for the `--viz` board browser
-  (`qt6-base-dev` or `qtbase5-dev` on Debian/Ubuntu). Pass
-  `-DTICTAC_BUILD_VIZ=OFF` to skip the dependency.
+- SQLite 3 development headers
+- Qt5 or Qt6 **Widgets + Svg** dev files for the `--viz` board browser
+  *(optional — pass `-DTICTAC_BUILD_VIZ=OFF` to skip)*
+- Internet access on the first configure (CMake `FetchContent` pulls the
+  chess library, Catch2, and Lua 5.4)
+
+### Ubuntu / Debian
+
+```sh
+# Required
+sudo apt install build-essential cmake git libsqlite3-dev
+
+# Optional — Qt board browser (--viz). Pick Qt5 OR Qt6, not both.
+sudo apt install qtbase5-dev libqt5svg5-dev          # Qt 5
+# or
+sudo apt install qt6-base-dev qt6-svg-dev            # Qt 6
+
+# Optional — UCI engine integration (--engine)
+sudo apt install stockfish
+
+# Optional — clipboard import (`tictac import clipboard`); install one
+sudo apt install wl-clipboard                        # Wayland
+sudo apt install xclip                               # X11
+```
+
+### Fedora
+
+```sh
+sudo dnf install gcc-c++ cmake git sqlite-devel
+sudo dnf install qt5-qtbase-devel qt5-qtsvg-devel    # or qt6-qtbase-devel qt6-qtsvg-devel
+sudo dnf install stockfish                           # optional
+```
 
 ## Build
 
