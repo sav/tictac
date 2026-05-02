@@ -1,13 +1,22 @@
 #include "viz/viz_session.hpp"
 
 #include <QApplication>
+#include <QDir>
 
 #include "chess.hpp"
 #include "viz/board_window.hpp"
 
+// Static-library resources need an explicit init: Qt only auto-registers
+// .qrc data when the resource is linked into the final executable, not
+// when it's pulled in transitively via a static archive.
+static void init_viz_resources() {
+    Q_INIT_RESOURCE(pieces);
+}
+
 namespace tictac {
 
 VizSession::VizSession() {
+    init_viz_resources();
     app_ = std::make_unique<QApplication>(argc_, argv_);
 }
 
