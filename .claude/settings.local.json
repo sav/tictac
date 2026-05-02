@@ -90,7 +90,11 @@
       "Bash(./build.sh -debug)",
       "Bash(./config.sh --help)",
       "Bash(/home/sav/my/src/tictac/install.sh --prefix /tmp/tictac_install)",
-      "Bash(/home/sav/my/src/tictac/install.sh --prefix /tmp/tictac_install --uninstall)"
+      "Bash(/home/sav/my/src/tictac/install.sh --prefix /tmp/tictac_install --uninstall)",
+      "Bash(command -v gnuplot)",
+      "Bash(rm -f game-*.pgn game-*.org game-*.png)",
+      "Bash(timeout 120 /home/sav/my/src/tictac/build/src/tictac -q search opening e4 e5 --plugin /home/sav/my/src/tictac/examples/analyze_game.lua --engine /usr/games/stockfish --engine-option Threads=1 --engine-option Hash=128 --db /tmp/tictac_puzzle_test/db --limit 1)",
+      "Bash(timeout 180 /home/sav/my/src/tictac/build/src/tictac -q search opening e4 e5 --plugin /home/sav/my/src/tictac/examples/analyze_game.lua --engine /usr/games/stockfish --engine-option Threads=1 --engine-option Hash=128 --db /tmp/tictac_puzzle_test/db --limit 1)"
     ]
   }
 }
