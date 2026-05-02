@@ -23,7 +23,7 @@ if not tictac or not tictac.engine then
     error("this plugin requires --engine PATH")
 end
 
-local DEPTH    = 16
+local DEPTH    = 21
 local STARTPOS = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 local MATE_CP  = 100000
 
