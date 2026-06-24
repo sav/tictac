@@ -100,7 +100,8 @@
       "Bash(build-debug/tests/tictac_tests \"[cli][load]\")",
       "Bash(/home/sav/my/src/tictac/build-debug/tests/tictac_tests \"[cli][load]\")",
       "Bash(/home/sav/my/src/tictac/build-debug/tests/tictac_tests \"search name\")",
-      "Bash(/home/sav/my/src/tictac/build-debug/tests/tictac_tests \"[cli][search]\")"
+      "Bash(/home/sav/my/src/tictac/build-debug/tests/tictac_tests \"[cli][search]\")",
+      "Bash(build-debug/tests/tictac_tests \"[cli]\")"
     ]
   }
 }
