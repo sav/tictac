@@ -30,11 +30,24 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(chesslib)
 
+# reproc drives the external UCI engine over stdin/stdout. We only need the C++
+# wrapper (reproc++); disable tests/examples to keep the build lean.
+set(REPROC++ ON CACHE BOOL "" FORCE)
+set(REPROC_TEST OFF CACHE BOOL "" FORCE)
+set(REPROC_EXAMPLES OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(
+  reproc
+  GIT_REPOSITORY https://github.com/DaanDeMeyer/reproc.git
+  GIT_TAG v14.2.5
+)
+FetchContent_MakeAvailable(reproc)
+
 # --- Targets ----------------------------------------------------------------
 add_executable(tictac
   src/main.cpp
+  src/uci_engine.cpp
 )
-target_link_libraries(tictac PRIVATE CLI11::CLI11)
+target_link_libraries(tictac PRIVATE CLI11::CLI11 reproc++)
 target_include_directories(tictac PRIVATE ${chesslib_SOURCE_DIR}/include)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
