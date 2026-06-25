@@ -1,0 +1,58 @@
+#pragma once
+
+#include <map>
+#include <optional>
+#include <string>
+#include <vector>
+
+namespace tictac {
+
+struct AnalysisLine {
+    std::optional<double> score; // centipawns, side-to-move relative
+    std::optional<int> mate;     // signed mate distance
+    std::vector<std::string> pv; // UCI moves
+};
+
+struct Analysis {
+    std::optional<double> score;
+    std::optional<int> mate;
+    int depth = 0;
+    long long nodes = 0;
+    long long time = 0; // milliseconds
+    long long nps = 0;
+    std::string bestmove;
+    std::vector<std::string> pv;
+    std::vector<AnalysisLine> lines; // populated when multipv > 1
+};
+
+struct AnalysisLimits {
+    std::optional<int> depth;
+    std::optional<int> movetime; // milliseconds
+    std::optional<long long> nodes;
+    int multipv = 1;
+};
+
+// A UCI engine subprocess. Spawned on construction, terminated on destruction.
+class Engine {
+public:
+    Engine(const std::string &path, const std::map<std::string, std::string> &options);
+    ~Engine();
+
+    Engine(const Engine &) = delete;
+    Engine &operator=(const Engine &) = delete;
+
+    void setOption(const std::string &name, const std::string &value);
+    Analysis analyse(const std::string &fen, const AnalysisLimits &limits);
+
+private:
+    void send(const std::string &line);
+    std::string readLine();
+    void waitFor(const std::string &token);
+
+    int to_engine_ = -1;   // write end of engine's stdin
+    int from_engine_ = -1; // read end of engine's stdout
+    int pid_ = -1;
+    std::string read_buffer_;
+};
+
+} // namespace tictac

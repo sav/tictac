@@ -31,12 +31,50 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(chesslib)
 
+# Lua interpreter (CMake-enabled mirror of the upstream sources). Provides the
+# `lua_static` target used to embed the plugin runtime. Its CMakeLists predates
+# CMake 3.5, so relax the minimum policy version for the sub-build.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+FetchContent_Declare(
+  lua
+  GIT_REPOSITORY https://github.com/walterschell/Lua.git
+  GIT_TAG v5.4.5
+)
+set(LUA_ENABLE_SHARED OFF CACHE BOOL "" FORCE)
+set(LUA_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(LUA_BUILD_BINARY OFF CACHE BOOL "" FORCE)
+set(LUA_BUILD_COMPILER OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(lua)
+
+# sol2 is a header-only C++ <-> Lua binding. We only need its headers; skipping
+# add_subdirectory avoids its internal find_package(Lua) which would not see the
+# FetchContent-built interpreter above.
+FetchContent_Declare(
+  sol2
+  GIT_REPOSITORY https://github.com/ThePhD/sol2.git
+  GIT_TAG v3.3.0
+)
+FetchContent_GetProperties(sol2)
+if(NOT sol2_POPULATED)
+  FetchContent_Populate(sol2)
+endif()
+
 # --- Targets ----------------------------------------------------------------
 add_executable(tictac
   src/main.cpp
+  src/app.cpp
+  src/game.cpp
+  src/engine.cpp
+  src/image.cpp
+  src/bindings.cpp
+  src/pipeline.cpp
 )
-target_link_libraries(tictac PRIVATE CLI11::CLI11)
-target_include_directories(tictac PRIVATE ${chesslib_SOURCE_DIR}/include)
+target_compile_definitions(tictac PRIVATE SOL_ALL_SAFETIES_ON=1)
+target_link_libraries(tictac PRIVATE CLI11::CLI11 lua_static)
+target_include_directories(tictac PRIVATE
+  ${chesslib_SOURCE_DIR}/include
+  ${sol2_SOURCE_DIR}/include
+)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(tictac PRIVATE -Wall -Wextra)
