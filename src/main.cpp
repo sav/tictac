@@ -19,7 +19,7 @@ public:
 		if (key == "FEN") {
 			board_.setFen(value);
 		}
-		headers_[key] = value;
+		headers_.insert_or_assign(std::string(key), std::string(value));
     }
 
     void startMoves() override {}
@@ -37,7 +37,7 @@ public:
 
 private:
     std::size_t index_ = 0;
-	std::unordered_map<std::string_view, std::string_view> headers_;
+	std::unordered_map<std::string, std::string> headers_;
     chess::Board board_;
 };
 
