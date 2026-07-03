@@ -132,7 +132,7 @@ after `finish`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `action` | string | `"pass"` | Flow control: `"pass"`, `"drop"`, or `"halt"`. |
+| `action` | string | `"pass"` | Flow control: `"pass"`, `"drop"`, or `"abort"`. |
 | `game` | `Game` | `input.game` | Game forwarded to the next plugin. |
 | `board` | `Board` | `input.board` | Board cursor forwarded to the next plugin. |
 | `data` | any | `input.data` | User payload forwarded to the next plugin. |
@@ -155,7 +155,7 @@ end
 |--------|--------|
 | `"pass"` | Forward to the next plugin; if last plugin, the game goes to the default output. |
 | `"drop"` | Remove the game from the pipeline (filters, dedup). Downstream plugins do not see it. |
-| `"halt"` | Stop reading the database entirely after this game (early exit; e.g. `--limit` plugins). `finish` still runs. |
+| `"abort"` | Stop reading the database entirely after this game (early exit; e.g. `--limit` plugins). `finish` still runs. |
 
 ### Shorthands
 
@@ -195,10 +195,8 @@ It is how a plugin talks to tictac.
 | `ctx.state` | A table private to **this** plugin instance — convenient scratch across hooks. |
 | `ctx.index` | 1-based index of the current game in the database (valid in `process`). |
 | `ctx.engine(path, opts)` | Create / fetch a [UCI engine](#engine) handle (managed & auto-closed). |
-| `ctx.open(path, mode?)` | Open a [Writer](#writer) (managed & auto-closed). `mode`: `"w"` (default) / `"a"`. |
-| `ctx.writer(path)` | Like `open`, but **cached by path** — repeated calls return the same writer. Ideal for the splitter. |
-| `ctx.emit(game, writer?)` | Write a game to `writer` (default: the program output) outside the normal pass-through. |
-| `ctx.out` | The default output [Writer](#writer) (honours `--output`). |
+| `ctx.open(path, mode?)` | Open a [Writer](#writer) (managed & auto-closed). `mode`: `"w"` (default, truncates) / `"a"` (append). Reopening the same path truncates — use `"a"` to append. |
+| `ctx.out` | The default output [Writer](#writer) (honours `--output`); **`nil` under `--no-output`**, so guard with `if ctx.out then`. Write to it mid-pipeline with `ctx.out:writeGame(game)`. |
 | `ctx.log` | `ctx.log.info/warn/error/debug(fmt, ...)` — structured logging prefixed with plugin + game index. |
 | `ctx.image(board, path, opts)` | Render a board to an image file (see [Image](#image-export)). |
 
@@ -344,8 +342,7 @@ local w = ctx.open("report.csv")
 w:write("white,black,result\n")          -- raw text
 w:writef("%s,%s,%s\n", a, b, c)          -- formatted
 w:writeGame(game)                        -- serialize a Game as PGN
-w:flush()
-w:close()                                -- optional; auto-closed after finish
+-- writes are flushed immediately; the writer is auto-closed after finish
 ```
 
 ### Image export
@@ -457,10 +454,17 @@ end
 ### Game splitter (one DB → many files)
 
 ```lua
+function plugin.init(ctx)  ctx.state.writers = {} end
+
 function plugin.process(input, ctx)
   local key = input.game:header("ECO") or "NA"
   local dir = ctx.args:get("dir", "out/")
-  ctx.writer(dir .. key .. ".pgn"):writeGame(input.game)   -- cached per path
+  local w = ctx.state.writers[key]                         -- cache per path yourself:
+  if not w then                                            -- reopening would truncate
+    w = ctx.open(dir .. key .. ".pgn")
+    ctx.state.writers[key] = w
+  end
+  w:writeGame(input.game)
   return input
 end
 ```
@@ -560,7 +564,7 @@ end
 3. A `"drop"` short-circuits the remaining plugins for that game.
 4. After the last plugin, a surviving game (`"pass"`) is written to `ctx.out`
    (unless `--no-output`).
-5. `"halt"` finishes the current game's pipeline, then stops reading the DB.
+5. `"abort"` finishes the current game's pipeline, then stops reading the DB.
 6. After all games, each plugin's `finish` runs **in pipeline order**.
 7. All managed engines and writers are closed.
 
@@ -589,7 +593,7 @@ These are the points I'd like you to confirm before implementation:
 4. **Default output.** Should surviving games go to stdout by default, or should
    output be silent unless `--output` is given?
 5. **Fan-out.** Keep the "return an array of results" fan-out, or restrict
-   multi-game production to `ctx.emit`?
+   multi-game production to explicit `ctx.out:writeGame` calls?
 6. **Concurrency (`--jobs`).** If we ever parallelize game workers, `ctx.shared`
    needs a defined concurrency model (per-worker shards merged in `finish`, or a
    lock). Worth deciding now so the interface doesn't change later.
