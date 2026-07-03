@@ -18,8 +18,7 @@ std::optional<chess::Move> parseMove(const chess::Board &board, std::string_view
     try {
         return chess::uci::parseSan(board, san);
     } catch (const chess::uci::SanParseError &) {
-    } catch (const chess::uci::AmbiguousMoveError &) {
-    }
+    } catch (const chess::uci::AmbiguousMoveError &) {}
     chess::Movelist moves;
     chess::movegen::legalmoves(moves, board);
     for (const auto &m : moves) {
@@ -48,8 +47,7 @@ int pieceValue(chess::PieceType pt) {
     }
 }
 
-LuaMove makeLuaMove(const chess::Board &before, chess::Move mv, std::shared_ptr<Game> game = nullptr,
-                    int ply = -1) {
+LuaMove makeLuaMove(const chess::Board &before, chess::Move mv, std::shared_ptr<Game> game = nullptr, int ply = -1) {
     return LuaMove{mv, before, std::move(game), ply};
 }
 
@@ -511,8 +509,7 @@ sol::table Runtime::buildCtx(PluginInstance &inst) {
             for (auto &kv : o) {
                 std::string key = kv.first.as<std::string>();
                 sol::object val = kv.second;
-                options[key] = val.is<std::string>() ? val.as<std::string>()
-                                                      : std::to_string(val.as<double>());
+                options[key] = val.is<std::string>() ? val.as<std::string>() : std::to_string(val.as<double>());
             }
         }
         auto eng = std::make_shared<Engine>(path, options);
