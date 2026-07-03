@@ -31,6 +31,12 @@
 - For development instructions, follow @DEV.md
 - For git and github best practices, follow @GIT.md 
 
+## Documentation
+
+- Keep `README.md` in sync with the code. Whenever a change affects something the
+  README describes — CLI flags, build steps, dependencies, the plugin model, usage
+  examples, or the project's scope — update the README in the same change.
+
 ## Project Tracking
 
 - Whenever something is deferred, stubbed, or left as a reserved/unimplemented interface

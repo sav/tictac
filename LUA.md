@@ -25,13 +25,11 @@ returns the input to the next plugin. This symmetry is the core of the design
 and directly satisfies the requirement of carrying *the game*, *the current
 board*, and a *user argument* between stages.
 
-```
-       PGN game
-          │
-          ▼
-   ┌─────────────┐   {game,board,data}   ┌─────────────┐   surviving games
-   │   foo.lua   │ ────────────────────▶ │   bar.lua   │ ───────────────▶  output
-   └─────────────┘                        └─────────────┘
+```mermaid
+flowchart LR
+    PGN["PGN game"] --> FOO["foo.lua"]
+    FOO -->|"{ game, board, data }"| BAR["bar.lua"]
+    BAR --> OUT["output"]
 ```
 
 ---
