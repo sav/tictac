@@ -73,6 +73,8 @@ over heap, and the Core Guidelines [0].
   value + `std::move`. Prefer returning values over out-params.
 - Return by value; trust NRVO — don't `std::move` a local in `return`.
 - Never return a reference/`string_view`/`span` to a local or temporary.
+- Return `T&`/`optional`/`expected`, not a nullable `T*` that might be dereferenced; take
+  a reference or `gsl::not_null` when null is invalid — unrepresentable states over UB.
 
 ### 3.3 Errors and control flow
 
