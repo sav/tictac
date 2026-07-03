@@ -1,3 +1,8 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Savio Sena <savio.sena@gmail.com>
+#
+# Build configuration for the tictac executable and its dependencies.
+
 cmake_minimum_required(VERSION 3.14)
 
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" TICTAC_VERSION LIMIT_COUNT 1)

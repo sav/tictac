@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Savio Sena <savio.sena@gmail.com>
+//
+// PGN game model: moves, headers, and the Game type.
+
 #pragma once
 
 #include <memory>

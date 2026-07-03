@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Savio Sena <savio.sena@gmail.com>
+//
+// PGN game model and parser implementation.
+
 #include "game.hpp"
 
 #include <cstdio>

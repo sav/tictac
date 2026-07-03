@@ -5,6 +5,23 @@
 - Always use C++23.
 - Avoid unnecessary comments.
 
+## File Headers
+
+- Every source file (C++, Lua, CMake, shell, etc.) must start with a header:
+  an SPDX license line, a copyright line, and a one-line description of what the
+  file is. Use the file's native comment syntax and keep a shebang, if any, on
+  the first line with the header directly below it.
+
+  ```cpp
+  // SPDX-License-Identifier: GPL-3.0-or-later
+  // Copyright (C) 2026 Savio Sena <savio.sena@gmail.com>
+  //
+  // <one-line description of the file>
+  ```
+
+- New files get this header at creation. Skip generated files, plain data
+  (e.g. `VERSION`, PGN samples), and files with no comment syntax.
+
 ## Building
 
 - Don't build after every change. Build only when explicitly asked. When you do build, fix any errors that come up.
