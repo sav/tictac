@@ -60,9 +60,12 @@ over heap, and the Core Guidelines [0].
 - No dangling references/`string_view`/`span` to locals. No premature `shared_ptr` or
   optimization. No silently swallowed errors / empty `catch (...)`.
 - Namespace things; anonymous namespaces (not `static`) for TU-local linkage.
+- **Order includes** project headers first (the matching `foo.hpp` leading), then a blank
+  line, then standard-library headers — each group sorted; third-party headers last.
 - Define a symbol declared in `foo.hpp` in the matching `foo.cpp` (or inline in `foo.hpp`
   if trivial and include-light) — never in a differently-named TU; justify deviations with
   a comment at the definition site.
+- Define functions in the `.cpp` in the same order they are declared in the `.hpp`.
 - Follow existing project style; else pick one and stay consistent.
 - **Comment the why, not the what**; API docstrings and file headers excepted.
 
