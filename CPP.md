@@ -1,0 +1,141 @@
+# Modern C++23 — Best Practices
+
+> LLM directives for C++. Follow unless the project or user says otherwise. Prefer what
+> experts ship over the newest feature. Default to clarity, safety, the STL.
+
+Target C++20/23 (C++26 when opted in). Prefer compile-time over runtime, value semantics
+over heap, and the Core Guidelines [0].
+
+## 1. Principles
+
+- **Prefer the STL** and known libs (`{fmt}`, Abseil, Boost) over reinventing — but no
+  dependency for trivia.
+- **Make illegal states unrepresentable:** encode invariants in types (`NonNull<T>`,
+  `enum` over `int`, `span` over pointer+length), not comments or scattered checks.
+- **Value semantics by default**; use references/pointers/heap only for identity or shared
+  lifetime.
+- **RAII owns everything.** No manual `new`/`delete` or `close()` in normal flow.
+- **Be explicit about ownership/lifetime** in signatures.
+- **Polymorphism:** prefer compile-time (concepts, templates, CRTP); reserve `virtual`
+  for real runtime needs (heterogeneous collections, plugins, stable ABIs).
+- **Validate at trust boundaries** (public APIs, input, I/O, deserialization); use
+  `assert` for internal invariants only (stripped under NDEBUG — never guard
+  release-critical constraints). Expected failures need real handling, not asserts.
+- Depend on interfaces/parameters, not globals; keep side effects at the edges.
+- Fixing a bug in a tested project: add the regression test. Don't invent APIs — say so
+  if unsure a facility exists.
+
+## 2. Tooling
+
+- **Warnings as errors** in CI: `-Wall -Wextra -Wpedantic -Werror` (`/W4 /WX` MSVC),
+  plus `-Wshadow -Wconversion -Wsign-conversion` where tolerated.
+- Wire in **sanitizers** (ASan, UBSan, TSan), **clang-tidy**, **clang-format** as opt-in;
+  match the project's `.clang-format`. Compile/build only when asked, and fix errors
+  manually rather than rebuilding after every edit.
+- Use `constexpr`/`consteval`/`constinit` to express intent, not everywhere.
+- Prefer `using` to `typedef`.
+
+## 3. Coding
+
+### 3.1 Baseline
+
+- **Use C++23 freely** (`std::print`, `expected`, `mdspan`, `flat_map`, `generator`).
+  For unevenly-supported features, don't degrade — guard with feature-test macros
+  (`__cpp_lib_*`) and a fallback, keeping the C++23 path primary.
+- Use `auto` when the type is obvious/verbose/incidental; spell it out when it documents
+  intent or a caller depends on it.
+- Prefer **`{}` init** (uniform, no narrowing) — but `vector<int> v{3}` is one element,
+  `v(3)` is three; use `()` for size/count.
+- Never a raw owning pointer: `unique_ptr`/`shared_ptr` for owned heap, containers for
+  sequences, `T*`/`span`/`string_view` for views.
+- Fixed-width ints (`int32_t`, `size_t`) when width matters (serialization, wire, hw).
+- Mark single-arg constructors and conversion operators `explicit` unless implicit is
+  wanted.
+- Prefer `enum class`; fix the underlying type for ABI, forward decls, bit width, or
+  serialization. Unscoped `enum` only for deliberate int conversion.
+- **No** C-style casts (use `static_cast` etc., or none), C arrays / pointer+length in
+  interfaces (use `array`/`vector`/`span`), `#define` for constants/functions, or
+  `using namespace std;` in headers.
+- `nullptr`, not `NULL`/`0`. `'\n'`, not `std::endl`.
+- No dangling references/`string_view`/`span` to locals. No premature `shared_ptr` or
+  optimization. No silently swallowed errors / empty `catch (...)`.
+- Namespace things; anonymous namespaces (not `static`) for TU-local linkage.
+- Follow existing project style; else pick one and stay consistent.
+- **Comment the why, not the what**; API docstrings and file headers excepted.
+
+### 3.2 `const` and passing
+
+- **`const` by default** for locals, member functions, parameters, pointees.
+- Pass cheap-to-copy by value; large read-only by `const T&` or a view; sink args by
+  value + `std::move`. Prefer returning values over out-params.
+- Return by value; trust NRVO — don't `std::move` a local in `return`.
+- Never return a reference/`string_view`/`span` to a local or temporary.
+
+### 3.3 Errors and control flow
+
+- Short, single-purpose functions; early returns over deep nesting.
+- **One consistent error strategy:** exceptions for exceptional failures (STL default);
+  `expected<T,E>` for recoverable/value-like errors or where exceptions are banned;
+  `optional<T>` for a self-explanatory absence; `error_code` at C/system boundaries.
+  If the project bans exceptions, honor it.
+- Mark `noexcept` only when genuinely non-throwing — especially move ops and swap
+  (containers rely on it). Use `[[nodiscard]]` where the return must not be ignored.
+
+### 3.4 Classes
+
+- **Rule of Zero**: compose RAII members so compiler-generated specials are correct;
+  most classes declare none of the five. If you declare one, obey the **Rule of Five**.
+- Prefer composition to inheritance. Polymorphic bases: `virtual` (or `protected`)
+  destructor, consider deleting copy; mark leaves `final`, overrides `override`.
+- Keep invariants inside the class (private data, establishing constructor); no setters
+  that break them. Strong types over primitives (`Meters`/`UserId`, not `double`/`int`).
+- `struct` for invariant-free aggregates; `class` when there's an invariant to protect.
+
+### 3.5 Containers
+
+- **Default to `std::vector`**; reach for `deque`/`list`/associative only with reason.
+- `flat_map`/`flat_set` (C++23) for small lookup-heavy maps; `unordered_*` for large
+  hash lookups; `map`/`set` when ordering matters. `reserve()` when size is known.
+- Prefer **algorithms/ranges** over raw loops when clearer.
+- **Range views** are lazy and reference-capturing: never outlive their range; beware
+  views over temporaries or repeated side-effecting transforms.
+- `span`/`string_view` don't own or extend lifetime; don't store as long-lived members
+  unless lifetime is guaranteed.
+- Use structured bindings for readability.
+
+### 3.6 Moves and performance
+
+- Move where a copy is wasted; don't `std::move` a `const` object.
+- Emplace when it saves a move, but `push_back(std::move(x))` is fine — pick readability.
+- Default to `unique_ptr` + borrowing; `shared_ptr` only for genuinely shared ownership;
+  break cycles with `weak_ptr`.
+
+### 3.7 Templates and concepts
+
+- Prefer **concepts** over raw SFINAE; use standard ones (`ranges::range`, `invocable`,
+  `convertible_to`) before inventing. Always constrain template parameters.
+- `auto` params for simple generic functions; explicit header when naming/relating types.
+- Prefer `if constexpr` to tag dispatch. Don't over-genericize — add generality when a
+  second caller needs it. `static_assert` with clear messages at the boundary.
+
+### 3.8 Concurrency
+
+- Prefer higher-level abstractions to raw threads (`async`, thread pools,
+  `execution::par`). Prefer immutable data / message passing over shared mutable state.
+- Protect shared state with `mutex` + `scoped_lock`/`lock_guard` (RAII); `scoped_lock`
+  for multiple mutexes. `atomic` for simple flags/counters — don't hand-roll lock-free.
+- Prefer `jthread` (auto-join, `stop_token`) over `thread`; never destruct un-joined.
+- Any concurrent access with a write needs synchronization; test under TSan.
+  `condition_variable`: always wait with a predicate.
+
+### 3.9 I/O and text
+
+- **`std::print`/`format`** (fall back to `{fmt}`); avoid iostream `<<` chains and
+  `printf`.
+- Treat text as UTF-8; use a real Unicode library, don't hand-roll.
+- `std::filesystem` for paths. `std::from_chars` for parsing numbers, over
+  `stoi`/`stringstream`.
+
+## References
+
+- [0] [C++ Core Guidelines](/home/sav/u/cpp/CppCoreGuidelines/CppCoreGuidelines.md)

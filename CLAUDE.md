@@ -9,6 +9,10 @@
 
 - Don't build after every change. Build only when explicitly asked. When you do build, fix any errors that come up.
 
+## Best Practices
+
+- Follow @CPP.md for instructions.
+
 ## Git
 
 - Never use the `Co-Authored-By` tag in commits. Use `Assisted-By: <Model>` instead.
