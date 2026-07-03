@@ -30,6 +30,7 @@ Expert-level habits. Keep history clean, reviewable, and recoverable.
 
 ## Recovery & safety
 
+- **Tags are reserved exclusively for releases** (`vX.Y.Z`) — never create a tag as a backup, checkpoint, or bookmark. When a backup genuinely feels warranted — reserve it for *critical, high-risk refactors* (a sweeping multi-commit history rewrite), not routine rebases/resets/filters — save it as a local branch: `git branch backup/<name> HEAD`, then `git reset --hard backup/<name>` to restore. Don't spam backup branches before ordinary rewrites; `git reflog` already covers those.
 - `git reflog` is your undo history — almost nothing is truly lost.
 - `git stash` for quick context switches (or better, a worktree).
 - `git bisect` to pin down the commit that introduced a bug.
