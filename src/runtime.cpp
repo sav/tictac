@@ -19,8 +19,7 @@ std::optional<chess::Move> parseMove(const chess::Board &board, std::string_view
     try {
         return chess::uci::parseSan(board, move);
     } catch (const chess::uci::SanParseError &) {
-    } catch (const chess::uci::AmbiguousMoveError &) {
-    }
+    } catch (const chess::uci::AmbiguousMoveError &) {}
     chess::Movelist moves;
     chess::movegen::legalmoves(moves, board);
     for (const auto &m : moves) {
@@ -29,8 +28,7 @@ std::optional<chess::Move> parseMove(const chess::Board &board, std::string_view
     return std::nullopt;
 }
 
-LuaMove makeLuaMove(chess::Move mv, const chess::Board &before, std::shared_ptr<Game> game = nullptr,
-                    int ply = -1) {
+LuaMove makeLuaMove(chess::Move mv, const chess::Board &before, std::shared_ptr<Game> game = nullptr, int ply = -1) {
     return LuaMove{mv, before, std::move(game), ply};
 }
 
