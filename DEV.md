@@ -1,7 +1,7 @@
-# Modern C++23 — Best Practices
+# Modern C++ — Best Practices
 
 > LLM directives for C++. Follow unless the project or user says otherwise. Prefer what
-> experts ship over the newest feature. Default to clarity, safety, the STL.
+> experts ship over the newest feature. Default to clarity, safety, and the STL.
 
 Target C++20/23 (C++26 when opted in). Prefer compile-time over runtime, value semantics
 over heap, and the Core Guidelines [0].
@@ -68,6 +68,8 @@ over heap, and the Core Guidelines [0].
 - Define functions in the `.cpp` in the same order they are declared in the `.hpp`.
 - Follow existing project style; else pick one and stay consistent.
 - **Comment the why, not the what**; API docstrings and file headers excepted.
+- **No divider comments** (`// -- Foo ------`) outside functions. Inside a function you may
+  label sections with a plain `// Foo` — never the dashed form, and never at file scope.
 
 ### 3.2 `const` and passing
 
