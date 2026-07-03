@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Savio Sena <savio.sena@gmail.com>
+--
 -- filter.lua -- keep games matching header criteria.
 --   --plugin "filter.lua player=^Fischer min_elo=2700"
 local plugin = {

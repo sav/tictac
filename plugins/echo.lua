@@ -1,3 +1,6 @@
+-- SPDX-License-Identifier: GPL-3.0-or-later
+-- Copyright (C) 2026 Savio Sena <savio.sena@gmail.com>
+--
 -- echo.lua -- pass games through unchanged; demo of the lifecycle.
 --
 -- Usage:

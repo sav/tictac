@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Savio Sena <savio.sena@gmail.com>
+//
+// Lua plugin runtime and pipeline: bound types and the Runtime interface.
+
 #pragma once
 
 #include <fstream>

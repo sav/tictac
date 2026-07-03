@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Savio Sena <savio.sena@gmail.com>
+//
+// UCI chess engine driver: subprocess management and UCI protocol I/O.
+
 #include "engine.hpp"
 
 #include <array>
