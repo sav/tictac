@@ -11,7 +11,8 @@
 
 ## Best Practices
 
-- Follow @CPP.md for instructions.
+- For development instructions, follow @CPP.md
+- For git and github best practices, follow @GIT.md 
 
 ## Git
 
