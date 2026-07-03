@@ -28,7 +28,7 @@
 
 ## Best Practices
 
-- For development instructions, follow @CPP.md
+- For development instructions, follow @DEV.md
 - For git and github best practices, follow @GIT.md 
 
 ## Project Tracking
