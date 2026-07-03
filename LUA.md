@@ -344,8 +344,7 @@ local w = ctx.open("report.csv")
 w:write("white,black,result\n")          -- raw text
 w:writef("%s,%s,%s\n", a, b, c)          -- formatted
 w:writeGame(game)                        -- serialize a Game as PGN
-w:flush()
-w:close()                                -- optional; auto-closed after finish
+-- writes are flushed immediately; the writer is auto-closed after finish
 ```
 
 ### Image export
