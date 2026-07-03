@@ -60,6 +60,9 @@ over heap, and the Core Guidelines [0].
 - No dangling references/`string_view`/`span` to locals. No premature `shared_ptr` or
   optimization. No silently swallowed errors / empty `catch (...)`.
 - Namespace things; anonymous namespaces (not `static`) for TU-local linkage.
+- Define a symbol declared in `foo.hpp` in the matching `foo.cpp` (or inline in `foo.hpp`
+  if trivial and include-light) — never in a differently-named TU; justify deviations with
+  a comment at the definition site.
 - Follow existing project style; else pick one and stay consistent.
 - **Comment the why, not the what**; API docstrings and file headers excepted.
 
