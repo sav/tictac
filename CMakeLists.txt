@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
-project(tictac VERSION 0.1.0 LANGUAGES CXX)
+
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" TICTAC_VERSION LIMIT_COUNT 1)
+project(tictac VERSION ${TICTAC_VERSION} LANGUAGES CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_STANDARD 23)
@@ -10,7 +12,6 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
-# --- Dependencies -----------------------------------------------------------
 # CLI11 for command-line argument parsing. Pulled in at configure time so the
 # build is self-contained and does not depend on a system-installed copy.
 include(FetchContent)
@@ -31,12 +32,52 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(chesslib)
 
-# --- Targets ----------------------------------------------------------------
+# Lua interpreter (CMake-enabled mirror of the upstream sources). Provides the
+# `lua_static` target used to embed the plugin runtime. Its CMakeLists predates
+# CMake 3.5, so relax the minimum policy version for the sub-build.
+set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+FetchContent_Declare(
+  lua
+  GIT_REPOSITORY https://github.com/walterschell/Lua.git
+  GIT_TAG v5.4.5
+)
+set(LUA_ENABLE_SHARED OFF CACHE BOOL "" FORCE)
+set(LUA_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(LUA_BUILD_BINARY OFF CACHE BOOL "" FORCE)
+set(LUA_BUILD_COMPILER OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(lua)
+
+# sol2 is a header-only C++ <-> Lua binding. We only need its headers; skipping
+# add_subdirectory avoids its internal find_package(Lua) which would not see the
+# FetchContent-built interpreter above.
+FetchContent_Declare(
+  sol2
+  GIT_REPOSITORY https://github.com/ThePhD/sol2.git
+  GIT_TAG c1f95a773c6f8f4fde8ca3efe872e7286afe4444 # 3.5.0 (develop); v3.3.0 fails on Clang 19
+)
+FetchContent_GetProperties(sol2)
+if(NOT sol2_POPULATED)
+  FetchContent_Populate(sol2)
+endif()
+
 add_executable(tictac
   src/main.cpp
+  src/app.cpp
+  src/game.cpp
+  src/engine.cpp
+  src/runtime.cpp
 )
-target_link_libraries(tictac PRIVATE CLI11::CLI11)
-target_include_directories(tictac PRIVATE ${chesslib_SOURCE_DIR}/include)
+target_compile_definitions(tictac PRIVATE
+  SOL_ALL_SAFETIES_ON=1
+  # SOL_ALL_SAFETIES_ON forces sol2's internal stderr prints on; silence them
+  # since the runtime already catches and reports every plugin error itself.
+  SOL_PRINT_ERRORS=0
+  TICTAC_VERSION="${TICTAC_VERSION}")
+target_link_libraries(tictac PRIVATE CLI11::CLI11 lua_static)
+target_include_directories(tictac SYSTEM PRIVATE
+  ${chesslib_SOURCE_DIR}/include
+  ${sol2_SOURCE_DIR}/include
+)
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(tictac PRIVATE -Wall -Wextra)
