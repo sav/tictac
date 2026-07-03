@@ -14,6 +14,13 @@
 - For development instructions, follow @CPP.md
 - For git and github best practices, follow @GIT.md 
 
+## Project Tracking
+
+- Whenever something is deferred, stubbed, or left as a reserved/unimplemented interface
+  (e.g. an accepted CLI flag that nothing consumes yet), record it in `TODO.md` at the
+  repo root. Don't rely on code comments alone — it's too easy to lose track of what
+  still needs implementing.
+
 ## Git
 
 - Never use the `Co-Authored-By` tag in commits. Use `Assisted-By: <Model>` instead.
