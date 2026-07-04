@@ -29,7 +29,8 @@
 ## Best Practices
 
 - For development instructions, follow @DEV.md
-- For git and github best practices, follow @GIT.md 
+- For git and github best practices, follow @GIT.md
+- Use the clangd LSP tools for C++ navigation.
 
 ## Documentation
 
