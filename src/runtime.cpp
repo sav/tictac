@@ -91,8 +91,17 @@ AnalysisLimits readLimits(const sol::table &t) {
 } // namespace
 
 Runtime::Runtime(RunOptions opts) : opts_(std::move(opts)) {
-    lua_.open_libraries(sol::lib::base, sol::lib::string, sol::lib::table, sol::lib::math, sol::lib::os, sol::lib::io,
-                        sol::lib::package);
+    // clang-format off
+    lua_.open_libraries(
+		sol::lib::base,
+		sol::lib::string,
+		sol::lib::table,
+		sol::lib::math,
+		sol::lib::os,
+		sol::lib::io,
+		sol::lib::package
+    );
+    // clang-format on
 
     shared_ = lua_.create_table();
 
