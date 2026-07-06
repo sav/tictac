@@ -46,7 +46,7 @@ tictac --file <db.pgn> [--plugin <spec>]... [--output <file>] [--jobs N] [--on-e
 | `--plugin`, `-p` | A plugin spec (see below). Repeatable; defines pipeline order. |
 | `--output`, `-o` | Where surviving games are written (default: stdout, PGN). `-` = stdout, omit with `--no-output`. |
 | `--no-output` | Discard the default game stream (useful for pure reporters). |
-| `--on-error` | `abort` \| `skip` \| `warn` (default `warn`) — what to do when a plugin raises. |
+| `--on-error` | `abort` \| `drop` \| `pass` (default `abort`) — how a plugin's failing `process()` is handled: `abort` halts the run, `drop` drops the game, `pass` passes it through unchanged; all three log the error. A failing `init` always aborts. |
 | `--jobs`, `-j` | Reserved: parallel game workers. Plugins must be written to tolerate it (see §9). |
 
 ### Plugin spec & arguments
@@ -571,7 +571,7 @@ end
 ### Errors
 
 - A plugin may `error("message")`. Behavior follows `--on-error`:
-  `abort` (stop), `skip` (drop the game, continue), `warn` (log + treat as pass).
+  `abort` (stop), `drop` (drop the game, continue), `pass` (log + pass the game through).
 - `ctx.args:require` and `analyse` with no limit raise descriptive errors.
 
 ---
