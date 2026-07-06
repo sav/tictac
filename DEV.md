@@ -66,6 +66,10 @@ over heap, and the Core Guidelines [0].
   if trivial and include-light) — never in a differently-named TU; justify deviations with
   a comment at the definition site.
 - Define functions in the `.cpp` in the same order they are declared in the `.hpp`.
+- When a function `foobar` is comprised of distinct "sections", break each out into a
+  `foobar_<secname>` helper rather than leaving one long body. If `foobar` is a public API,
+  keep the section helpers TU-local: put them in an anonymous namespace directly above
+  `foobar`'s definition, so they don't leak into the header.
 - Follow existing project style; else pick one and stay consistent.
 - **Comment the why, not the what**; API docstrings and file headers excepted.
 - **No divider comments** (`// -- Foo ------`) outside functions. Inside a function you may
