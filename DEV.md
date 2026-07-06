@@ -74,6 +74,10 @@ over heap, and the Core Guidelines [0].
 - **Comment the why, not the what**; API docstrings and file headers excepted.
 - **No divider comments** (`// -- Foo ------`) outside functions. Inside a function you may
   label sections with a plain `// Foo` — never the dashed form, and never at file scope.
+- When hand-layout genuinely reads better than the formatter's (e.g. a wide table of
+  bindings), wrap that region in `// clang-format off` / `// clang-format on` rather than
+  fighting it with filler markers like trailing `//`. Use it only where it earns its keep;
+  don't sprinkle `// clang-format off` across the codebase.
 
 ### 3.2 `const` and passing
 
