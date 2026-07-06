@@ -7,11 +7,12 @@
 
 #include <fstream>
 #include <iostream>
-#include <map>
 #include <memory>
 #include <ostream>
+#include <print>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -22,38 +23,37 @@
 
 namespace tictac {
 
-// An output sink: a PGN/CSV/text file or the program's default output.
+// An output sink: a PGN/CSV/text file or the program's default output (stdout).
 class Writer {
 public:
-    Writer() : os_(&std::cout) {}
+    Writer() = default;
 
-    Writer(const std::string &path, const std::string &mode) {
-        auto flags = std::ios::out;
-        if (mode == "a") flags |= std::ios::app;
-        else flags |= std::ios::trunc;
-        file_.open(path, flags);
-        if (!file_) throw std::runtime_error("cannot open writer: " + path);
+    explicit Writer(const std::string &path, bool append = false) {
+        file_.open(path, append ? std::ios::app : std::ios::trunc);
+        if (!file_) throw std::runtime_error("cannot open file: " + path);
         os_ = &file_;
     }
 
     Writer(const Writer &) = delete;
     Writer &operator=(const Writer &) = delete;
+    Writer(Writer &&) = delete;
+    Writer &operator=(Writer &&) = delete;
 
     void write(const std::string &text) {
-        *os_ << text << std::flush;
+        std::print(*os_, "{}", text);
+        os_->flush();
         if (!*os_) throw std::runtime_error("writer: write failed");
     }
 
     void writeGame(const std::shared_ptr<Game> &game) {
-        *os_ << game->pgn() << "\n" << std::flush;
+        std::print(*os_, "{}\n", game->pgn());
+        os_->flush();
         if (!*os_) throw std::runtime_error("writer: write failed");
     }
 
-    std::ostream &stream() { return *os_; }
-
 private:
-    std::ofstream file_; // closed (and flushed) on destruction
-    std::ostream *os_ = nullptr;
+    std::ofstream file_;            // closed (and flushed) on destruction
+    std::ostream *os_ = &std::cout; // borrows file_ when open, else std::cout
 };
 
 // A plugin's parsed CLI arguments with typed accessors.
@@ -99,8 +99,8 @@ struct PluginInstance {
     sol::table ctx;
     std::shared_ptr<Args> args;
     std::string name;
-    std::map<std::string, std::shared_ptr<Engine>> engines;
-    std::map<std::string, std::shared_ptr<Writer>> writers;
+    std::unordered_map<std::string, std::shared_ptr<Engine>> engines;
+    std::unordered_map<std::string, std::shared_ptr<Writer>> writers;
     std::vector<std::shared_ptr<Writer>> managed;
 };
 
@@ -133,6 +133,6 @@ private:
 };
 
 // Parse a "file.lua key=value key2=value2" spec into a PluginSpec.
-PluginSpec parsePluginSpec(const std::string &spec);
+[[nodiscard]] PluginSpec parsePluginSpec(const std::string &spec);
 
 } // namespace tictac

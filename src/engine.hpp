@@ -5,9 +5,10 @@
 
 #pragma once
 
-#include <map>
+#include <cstdint>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace tictac {
@@ -22,9 +23,9 @@ struct Analysis {
     std::optional<double> score;
     std::optional<int> mate;
     int depth = 0;
-    long long nodes = 0;
-    long long time = 0; // milliseconds
-    long long nps = 0;
+    std::int64_t nodes = 0;
+    std::int64_t time = 0; // milliseconds
+    std::int64_t nps = 0;
     std::string bestmove;
     std::vector<std::string> pv;
     std::vector<AnalysisLine> lines; // populated when multipv > 1
@@ -33,21 +34,23 @@ struct Analysis {
 struct AnalysisLimits {
     std::optional<int> depth;
     std::optional<int> movetime; // milliseconds
-    std::optional<long long> nodes;
+    std::optional<std::int64_t> nodes;
     int multipv = 1;
 };
 
 // A UCI engine subprocess. Spawned on construction, terminated on destruction.
 class Engine {
 public:
-    Engine(const std::string &path, const std::map<std::string, std::string> &options);
+    Engine(const std::string &path, const std::unordered_map<std::string, std::string> &options);
     ~Engine();
 
     Engine(const Engine &) = delete;
     Engine &operator=(const Engine &) = delete;
+    Engine(Engine &&) = delete;
+    Engine &operator=(Engine &&) = delete;
 
     void setOption(const std::string &name, const std::string &value);
-    Analysis analyse(const std::string &fen, const AnalysisLimits &limits);
+    [[nodiscard]] Analysis analyse(const std::string &fen, const AnalysisLimits &limits);
 
 private:
     void send(const std::string &line);

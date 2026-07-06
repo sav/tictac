@@ -20,7 +20,7 @@ public:
 private:
     // Fills opts from the command line. Returns an exit code when the program
     // should stop early (--help, --version, or a parse error), else nullopt.
-    std::optional<int> parseArgs(RunOptions &opts) const;
+    [[nodiscard]] std::optional<int> parseArgs(RunOptions &opts) const;
 
     const int argc_;
     char **const argv_;

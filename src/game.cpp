@@ -5,37 +5,33 @@
 
 #include "game.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <print>
-#include <sstream>
+#include <ranges>
 
 namespace tictac {
 
+namespace {
+constexpr std::size_t kPgnWrapWidth = 80; // soft wrap column for PGN move text
+}
+
 const std::string *Game::findHeader(const std::string &key) const {
-    for (const auto &[k, v] : headers) {
-        if (k == key) return &v;
-    }
-    return nullptr;
+    auto it = std::ranges::find_if(headers, [&](const auto &h) { return h.first == key; });
+    return it == headers.end() ? nullptr : &it->second;
 }
 
 void Game::setHeader(const std::string &key, const std::string &value) {
-    for (auto &[k, v] : headers) {
-        if (k == key) {
-            v = value;
-            return;
-        }
-    }
-    headers.emplace_back(key, value);
+    auto it = std::ranges::find_if(headers, [&](const auto &h) { return h.first == key; });
+    if (it != headers.end()) it->second = value;
+    else headers.emplace_back(key, value);
 }
 
 bool Game::removeHeader(const std::string &key) {
-    for (auto it = headers.begin(); it != headers.end(); ++it) {
-        if (it->first == key) {
-            headers.erase(it);
-            return true;
-        }
-    }
-    return false;
+    auto it = std::ranges::find_if(headers, [&](const auto &h) { return h.first == key; });
+    if (it == headers.end()) return false;
+    headers.erase(it);
+    return true;
 }
 
 std::string Game::result() const {
@@ -49,26 +45,27 @@ chess::Board Game::boardAt(int ply) const {
     chess::Board board(startFen);
     const std::size_t limit =
         ply < 0 ? moves.size() : std::min<std::size_t>(static_cast<std::size_t>(ply), moves.size());
-    for (std::size_t i = 0; i < limit; ++i) {
-        board.makeMove(moves[i].move);
+    for (const auto &md : moves | std::views::take(limit)) {
+        board.makeMove(md.move);
     }
     return board;
 }
 
 std::string Game::pgn() const {
-    std::ostringstream out;
+    std::string out;
     for (const auto &[k, v] : headers) {
-        out << '[' << k << " \"" << v << "\"]\n";
+        out += "[" + k + " \"" + v + "\"]\n";
     }
-    out << '\n';
+    out += '\n';
 
     chess::Board board(startFen);
     std::string line;
     const auto flush_token = [&](const std::string &token) {
         if (line.empty()) {
             line = token;
-        } else if (line.size() + 1 + token.size() > 80) {
-            out << line << '\n';
+        } else if (line.size() + 1 + token.size() > kPgnWrapWidth) {
+            out += line;
+            out += '\n';
             line = token;
         } else {
             line += ' ';
@@ -95,8 +92,9 @@ std::string Game::pgn() const {
     }
 
     flush_token(result());
-    out << line << "\n";
-    return out.str();
+    out += line;
+    out += '\n';
+    return out;
 }
 
 std::shared_ptr<Game> Game::clone() const { return std::make_shared<Game>(*this); }
