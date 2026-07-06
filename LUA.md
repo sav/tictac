@@ -196,17 +196,68 @@ It is how a plugin talks to tictac.
 | `ctx.open(path, mode?)` | Open a [Writer](#writer) (managed & auto-closed). `mode`: `"w"` (default, truncates) / `"a"` (append). Reopening the same path truncates — use `"a"` to append. |
 | `ctx.out` | The default output [Writer](#writer) (honours `--output`); **`nil` under `--no-output`**, so guard with `if ctx.out then`. Write to it mid-pipeline with `ctx.out:writeGame(game)`. |
 | `ctx.log` | `ctx.log.info/warn/error/debug(fmt, ...)` — structured logging prefixed with plugin + game index. |
-| `ctx.image(board, path, opts)` | Render a board to an image file (see [Image](#image-export)). |
 
 ### Argument accessors
 
+Arguments are `key=value` pairs on the plugin spec, and **a key may repeat**:
+
+```sh
+tictac --file db.pgn --plugin "tag.lua tag=sharp tag=endgame depth=20"
+```
+
+Every accessor follows the same rule. When the key is **absent** it returns the
+default (`nil`, or an error for `require`); when it appears **once** it returns a
+single coerced value; when it appears **more than once** it returns a 1-based
+array of coerced values, in command-line order. `list` has no default
+argument — it returns `nil` when the key is absent, and otherwise always
+returns an array, splitting each present value on commas.
+
 ```lua
-ctx.args:get("engine")              -- string or nil
-ctx.args:get("engine", "stockfish")-- string with default
-ctx.args:number("depth", 20)        -- number with default
-ctx.args:bool("verbose", false)     -- boolean with default
-ctx.args:require("dir")             -- string; errors if missing
-ctx.args:list("tags")               -- "a,b,c" -> { "a", "b", "c" }
+ctx.args:get("tag")                  -- "tag=sharp tag=endgame" -> { "sharp", "endgame" }
+ctx.args:get("engine", "stockfish")  -- one value -> a string; the default when absent
+ctx.args:number("depth", 20)         -- number, or array of numbers if repeated
+ctx.args:bool("verbose", false)      -- boolean, or array of booleans if repeated
+ctx.args:require("dir")              -- string or array; errors if missing
+ctx.args:list("tags")                -- "a,b,c" -> { "a", "b", "c" }; nil if absent
+```
+
+The default is optional: `ctx.args:number("depth")` returns `nil` when `depth`
+is absent, not `0`. Pass a default only when you want a fallback value.
+
+`number` and `bool` coerce the raw string into a native type and can fail to do
+so (`depth=abc`, `verbose=maybe`): on a bad value they print an error to stderr
+naming the argument, the value, and the expected type, and return `nil` — the
+default only covers a **missing** key, never a malformed one. `bool` recognises
+`true`/`1`/`yes`/`on` and `false`/`0`/`no`/`off`; anything else is a bad value.
+
+An explicitly empty value (`tag=`) is treated the same as `tag` being absent —
+every accessor returns its default/`nil` (or errors, for `require`) rather than
+a present-but-empty string. **`bool` is the exception**: since a bare flag
+(`verbose`, with no `=`) already means `true`, an explicit empty value
+(`verbose=`) means `false` instead of absent, letting a caller disable a flag
+without dropping it from the spec:
+
+```lua
+ctx.args:bool("verbose")   -- absent      -> nil
+ctx.args:bool("verbose")   -- "verbose"   -> true
+ctx.args:bool("verbose")   -- "verbose=1" -> true
+ctx.args:bool("verbose")   -- "verbose="  -> false
+ctx.args:bool("verbose")   -- "verbose=0" -> false
+```
+
+When a key may repeat, normalise the single/array duality and iterate — order is
+preserved:
+
+```lua
+-- "tag.lua tag=sharp tag=endgame"  ->  ctx.args:get("tag") == { "sharp", "endgame" }
+local function each(v)
+  if v == nil then return {} end
+  return type(v) == "table" and v or { v }
+end
+
+for i, tag in ipairs(each(ctx.args:get("tag"))) do
+  ctx.log.info("tag %d = %s", i, tag)
+end
 ```
 
 ### Scope summary
@@ -271,8 +322,6 @@ board:isInsufficientMaterial()
 board:isRepetition(count?)
 board:phase()                    -- "opening" | "middlegame" | "endgame" (heuristic)
 board:material()                 -- { white = n, black = n } in centipawns
-
-board:image(path, opts?)         -- convenience for ctx.image(board, ...)
 ```
 
 ### Move
@@ -341,22 +390,6 @@ w:write("white,black,result\n")          -- raw text
 w:writef("%s,%s,%s\n", a, b, c)          -- formatted
 w:writeGame(game)                        -- serialize a Game as PGN
 -- writes are flushed immediately; the writer is auto-closed after finish
-```
-
-### Image export
-
-```lua
-ctx.image(board, "diagram.png", {
-  size        = 512,                 -- pixels
-  format      = "png",               -- "png" | "svg"
-  flip        = false,               -- orient from black's side
-  coordinates = true,                -- file/rank labels
-  lastMove    = move,                -- highlight a move's from/to squares
-  highlight   = { "e4", "d5" },      -- extra highlighted squares
-  arrows      = { { "g1", "f3" } },  -- annotation arrows
-  theme       = "default",           -- piece/board theme name
-})
--- returns the output path on success; raises on failure.
 ```
 
 ---
@@ -500,7 +533,7 @@ function plugin.finish(ctx)
 end
 ```
 
-### Puzzle finder → diagram (cross-plugin handoff)
+### Puzzle finder → collector (cross-plugin handoff)
 
 ```lua
 -- puzzle.lua: find a tactical shot, hand the position downstream via board+data
@@ -515,11 +548,10 @@ function plugin.process(input, ctx)
   return false
 end
 
--- diagram.lua: render whatever board the previous plugin selected
+-- collect.lua: emit whatever position the previous plugin selected
 function plugin.process(input, ctx)
   if input.data and input.data.puzzle then
-    ctx.image(input.board, string.format("puzzle_%d.png", ctx.index),
-              { size = 480, flip = input.board:sideToMove() == "black" })
+    ctx.out:writef("%s ; mate in %d\n", input.board:fen(), input.data.mate)
   end
   return input
 end

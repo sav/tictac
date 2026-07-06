@@ -30,22 +30,22 @@ public:
     std::vector<std::pair<std::string, std::string>> headers;
     std::vector<MoveData> moves;
 
-    const std::string *findHeader(const std::string &key) const;
+    [[nodiscard]] const std::string *findHeader(const std::string &key) const;
     void setHeader(const std::string &key, const std::string &value);
     bool removeHeader(const std::string &key);
 
-    std::string result() const;
-    std::size_t moveCount() const { return moves.size(); }
+    [[nodiscard]] std::string result() const;
+    [[nodiscard]] std::size_t moveCount() const { return moves.size(); }
 
-    chess::Board startBoard() const;
+    [[nodiscard]] chess::Board startBoard() const;
     // Board after `ply` half-moves; ply < 0 means the final position.
-    chess::Board boardAt(int ply) const;
+    [[nodiscard]] chess::Board boardAt(int ply) const;
 
-    std::string pgn() const;
-    std::shared_ptr<Game> clone() const;
+    [[nodiscard]] std::string pgn() const;
+    [[nodiscard]] std::shared_ptr<Game> clone() const;
 };
 
 // Parse every game in `stream` into the model.
-std::vector<std::shared_ptr<Game>> parseGames(std::istream &stream);
+[[nodiscard]] std::vector<std::shared_ptr<Game>> parseGames(std::istream &stream);
 
 } // namespace tictac

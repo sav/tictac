@@ -6,20 +6,26 @@
 #include "engine.hpp"
 
 #include <array>
-#include <cstring>
+#include <bitset>
+#include <csignal>
+#include <format>
 #include <sstream>
 #include <stdexcept>
+#include <unordered_map>
 
-#include <signal.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
 namespace tictac {
 
-Engine::Engine(const std::string &path, const std::map<std::string, std::string> &options) {
-    int in_pipe[2];  // parent -> child stdin
-    int out_pipe[2]; // child stdout -> parent
-    if (pipe(in_pipe) != 0 || pipe(out_pipe) != 0) {
+namespace {
+constexpr int kMaxLines = 64; // cap on UCI multipv lines we track
+}
+
+Engine::Engine(const std::string &path, const std::unordered_map<std::string, std::string> &options) {
+    std::array<int, 2> in_pipe;  // parent -> child stdin
+    std::array<int, 2> out_pipe; // child stdout -> parent
+    if (pipe(in_pipe.data()) != 0 || pipe(out_pipe.data()) != 0) {
         throw std::runtime_error("engine: failed to create pipes");
     }
 
@@ -113,16 +119,15 @@ Analysis Engine::analyse(const std::string &fen, const AnalysisLimits &limits) {
     waitFor("readyok");
     send("position fen " + fen);
 
-    std::ostringstream go;
-    go << "go";
-    if (limits.depth) go << " depth " << *limits.depth;
-    if (limits.movetime) go << " movetime " << *limits.movetime;
-    if (limits.nodes) go << " nodes " << *limits.nodes;
-    send(go.str());
+    std::string go = "go";
+    if (limits.depth) go += std::format(" depth {}", *limits.depth);
+    if (limits.movetime) go += std::format(" movetime {}", *limits.movetime);
+    if (limits.nodes) go += std::format(" nodes {}", *limits.nodes);
+    send(go);
 
     Analysis result;
     std::vector<AnalysisLine> lines(static_cast<std::size_t>(std::max(1, limits.multipv)));
-    bool seen[64] = {false};
+    std::bitset<kMaxLines> seen;
 
     for (;;) {
         std::string line = readLine();
@@ -172,7 +177,7 @@ Analysis Engine::analyse(const std::string &fen, const AnalysisLimits &limits) {
 
         if (has_score && multipv >= 1 && multipv <= static_cast<int>(lines.size())) {
             lines[static_cast<std::size_t>(multipv - 1)] = cur;
-            if (multipv < 64) seen[multipv] = true;
+            if (multipv < kMaxLines) seen[static_cast<std::size_t>(multipv)] = true;
         }
     }
 
@@ -180,8 +185,8 @@ Analysis Engine::analyse(const std::string &fen, const AnalysisLimits &limits) {
     result.mate = lines[0].mate;
     result.pv = lines[0].pv;
     if (limits.multipv > 1) {
-        for (int i = 1; i <= limits.multipv && i < 64; ++i) {
-            if (seen[i]) result.lines.push_back(lines[static_cast<std::size_t>(i - 1)]);
+        for (int i = 1; i <= limits.multipv && i < kMaxLines; ++i) {
+            if (seen[static_cast<std::size_t>(i)]) result.lines.push_back(lines[static_cast<std::size_t>(i - 1)]);
         }
     }
     return result;

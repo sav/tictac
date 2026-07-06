@@ -5,8 +5,11 @@
 
 #include "runtime.hpp"
 
+#include <algorithm>
+#include <cstdio>
 #include <format>
-#include <iostream>
+#include <print>
+#include <ranges>
 #include <sstream>
 #include <stdexcept>
 
@@ -84,9 +87,68 @@ AnalysisLimits readLimits(const sol::table &t) {
     AnalysisLimits lim;
     if (t["depth"].valid()) lim.depth = t.get<int>("depth");
     if (t["movetime"].valid()) lim.movetime = t.get<int>("movetime");
-    if (t["nodes"].valid()) lim.nodes = t.get<long long>("nodes");
+    if (t["nodes"].valid()) lim.nodes = t.get<std::int64_t>("nodes");
     if (t["multipv"].valid()) lim.multipv = t.get<int>("multipv");
     return lim;
+}
+
+// All values stored for `key`, in the order they were passed (empty if none).
+std::vector<const std::string *>
+findArgs(const std::vector<std::pair<std::string, std::string>> &values, std::string_view key) {
+    std::vector<const std::string *> out;
+    for (const auto &[k, v] : values)
+        if (k == key) out.push_back(&v);
+    return out;
+}
+
+// Like findArgs, but drops entries with an explicitly empty value: `key=` is
+// treated the same as `key` being absent. Every accessor except `bool` wants
+// this -- `bool` treats an empty value as an explicit false instead.
+std::vector<const std::string *>
+findNonEmptyArgs(const std::vector<std::pair<std::string, std::string>> &values, std::string_view key) {
+    std::vector<const std::string *> out = findArgs(values, key);
+    std::erase_if(out, [](const std::string *v) { return v->empty(); });
+    return out;
+}
+
+// Coerce the found values with `f`: a lone match yields the scalar, several yield
+// a 1-based array in argument order. `found` must be non-empty.
+template <typename F>
+sol::object scalarOrArray(sol::this_state ts, const std::vector<const std::string *> &found, F f) {
+    if (found.size() == 1) return sol::make_object(ts, f(*found.front()));
+    sol::state_view lua(ts);
+    sol::table out = lua.create_table();
+    for (std::size_t i = 0; i < found.size(); ++i) out[i + 1] = f(*found[i]);
+    return out;
+}
+
+// Like scalarOrArray, but `f` may reject a value (returning nullopt). On the first
+// rejection, print an error naming `key`, `typeName` (the expected type), and the
+// offending value to stderr and return nil for the whole call. `found` must be
+// non-empty.
+template <typename F>
+sol::object scalarOrArrayChecked(
+    sol::this_state ts,
+    std::string_view key,
+    std::string_view typeName,
+    std::vector<std::string const *> const &found,
+    F f
+) {
+    std::vector<sol::object> values;
+    values.reserve(found.size());
+    for (auto const *v : found) {
+        auto coerced = f(*v);
+        if (!coerced) {
+            std::println(stderr, "error: invalid value '{}' for argument '{}': expected a {}", *v, key, typeName);
+            return sol::lua_nil;
+        }
+        values.push_back(sol::make_object(ts, *coerced));
+    }
+    if (values.size() == 1) return values.front();
+    sol::state_view lua(ts);
+    sol::table out = lua.create_table();
+    for (std::size_t i = 0; i < values.size(); ++i) out[i + 1] = values[i];
+    return out;
 }
 
 } // namespace
@@ -107,7 +169,7 @@ Runtime::Runtime(RunOptions opts) : opts_(std::move(opts)) {
     shared_ = lua_.create_table();
 
     if (!opts_.noOutput) {
-        out_ = opts_.output == "-" ? std::make_shared<Writer>() : std::make_shared<Writer>(opts_.output, "w");
+        out_ = opts_.output == "-" ? std::make_shared<Writer>() : std::make_shared<Writer>(opts_.output);
     }
 
     registerTypes();
@@ -122,7 +184,7 @@ int Runtime::run() {
             sol::protected_function_result r = (*init)(inst->ctx);
             if (!r.valid()) {
                 sol::error err = r;
-                std::cerr << "error: init of '" << inst->name << "': " << err.what() << "\n";
+                std::println(stderr, "error: init of '{}': {}", inst->name, err.what());
                 return 1; // init failure means the plugin can't run; always abort, regardless of --on-error
             }
         }
@@ -134,7 +196,7 @@ int Runtime::run() {
         if (aborted) break;
         std::ifstream in(file);
         if (!in) {
-            std::cerr << "error: cannot open file: " << file << "\n";
+            std::println(stderr, "error: cannot open file: {}", file);
             return 1;
         }
         auto games = parseGames(in);
@@ -155,7 +217,7 @@ int Runtime::run() {
             sol::protected_function_result r = (*finish)(inst->ctx);
             if (!r.valid()) {
                 sol::error err = r;
-                std::cerr << "error: finish of '" << inst->name << "': " << err.what() << "\n";
+                std::println(stderr, "error: finish of '{}': {}", inst->name, err.what());
             }
         }
     }
@@ -266,11 +328,11 @@ void registerTypes_Board(sol::state_view lua) {
         },
         "isCheck", [](LuaBoard &b) { return b.board.inCheck(); },
         "isCheckmate", [](LuaBoard &b) {
-            auto [reason, result] = b.board.isGameOver();
+            auto reason = b.board.isGameOver().first;
             return reason == chess::GameResultReason::CHECKMATE;
         },
         "isStalemate", [](LuaBoard &b) {
-            auto [reason, result] = b.board.isGameOver();
+            auto reason = b.board.isGameOver().first;
             return reason == chess::GameResultReason::STALEMATE;
         },
         "isInsufficientMaterial", [](LuaBoard &b) { return b.board.isInsufficientMaterial(); },
@@ -400,7 +462,7 @@ void registerTypes_Engine(sol::state_view lua) {
         },
         "cp", [](Engine &e, LuaBoard &b, sol::table limits) -> double {
             Analysis a = e.analyse(b.board.getFen(), readLimits(limits));
-            double cp;
+            double cp = 0.0;
             if (a.mate) cp = (*a.mate >= 0 ? 1.0 : -1.0) * 100000.0;
             else cp = a.score.value_or(0.0);
             if (b.board.sideToMove() == chess::Color::BLACK) cp = -cp;
@@ -412,55 +474,58 @@ void registerTypes_Engine(sol::state_view lua) {
 void registerTypes_Args(sol::state_view lua) {
     lua.new_usertype<Args>(
         "Args", sol::no_constructor,
-        "get", [](Args &a, const std::string &key, sol::variadic_args va, sol::this_state ts) -> sol::object {
-            const std::string *found = nullptr;
-            for (const auto &[k, v] : a.values)
-                if (k == key) found = &v;
-            if (found) return sol::make_object(ts, *found);
-            if (va.size() > 0) return va[0].get<sol::object>();
-            return sol::lua_nil;
+        "get", [](Args &a, const std::string &key, sol::optional<sol::object> def, sol::this_state ts) -> sol::object {
+            std::vector<const std::string *> found = findNonEmptyArgs(a.values, key);
+            if (found.empty()) {
+                if (def) return *def;
+                return sol::lua_nil;
+            }
+            return scalarOrArray(ts, found, [](const std::string &s) { return s; });
         },
-        "number", [](Args &a, const std::string &key, sol::optional<double> def) -> double {
-            const std::string *found = nullptr;
-            for (const auto &[k, v] : a.values)
-                if (k == key) found = &v;
-            if (found) {
+        "number", [](Args &a, const std::string &key, sol::optional<double> def, sol::this_state ts) -> sol::object {
+            std::vector<const std::string *> found = findNonEmptyArgs(a.values, key);
+            if (found.empty()) {
+                if (def) return sol::make_object(ts, *def);
+                return sol::lua_nil;
+            }
+            return scalarOrArrayChecked(ts, key, "number", found, [](const std::string &s) -> std::optional<double> {
                 double value = 0.0;
-                auto [ptr, ec] = std::from_chars(found->data(), found->data() + found->size(), value);
-                if (ec == std::errc{}) return value;
-            }
-            return def.value_or(0.0);
+                auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), value);
+                if (ec != std::errc{}) return std::nullopt;
+                return value;
+            });
         },
-        "bool", [](Args &a, const std::string &key, sol::optional<bool> def) -> bool {
-            const std::string *found = nullptr;
-            for (const auto &[k, v] : a.values)
-                if (k == key) found = &v;
-            if (found) {
-                const std::string &v = *found;
-                return v == "true" || v == "1" || v == "yes" || v == "on";
+        "bool", [](Args &a, const std::string &key, sol::optional<bool> def, sol::this_state ts) -> sol::object {
+            std::vector<const std::string *> found = findArgs(a.values, key);
+            if (found.empty()) {
+                if (def) return sol::make_object(ts, *def);
+                return sol::lua_nil;
             }
-            return def.value_or(false);
+            return scalarOrArrayChecked(ts, key, "boolean", found, [](const std::string &s) -> std::optional<bool> {
+                if (s.empty()) return false; // `foo=` explicitly disables the flag
+                constexpr std::array<std::string_view, 4> truthy{"true", "1", "yes", "on"};
+                constexpr std::array<std::string_view, 4> falsy{"false", "0", "no", "off"};
+                if (std::ranges::contains(truthy, s)) return true;
+                if (std::ranges::contains(falsy, s)) return false;
+                return std::nullopt;
+            });
         },
-        "require", [](Args &a, const std::string &key) -> std::string {
-            const std::string *found = nullptr;
-            for (const auto &[k, v] : a.values)
-                if (k == key) found = &v;
-            if (!found) throw std::runtime_error("missing required argument: " + key);
-            return *found;
+        "require", [](Args &a, const std::string &key, sol::this_state ts) -> sol::object {
+            std::vector<const std::string *> found = findNonEmptyArgs(a.values, key);
+            if (found.empty()) throw std::runtime_error("missing required argument: " + key);
+            return scalarOrArray(ts, found, [](const std::string &s) { return s; });
         },
         "list", [](Args &a, const std::string &key, sol::this_state ts) -> sol::object {
-            bool found = false;
+            std::vector<const std::string *> found = findNonEmptyArgs(a.values, key);
+            if (found.empty()) return sol::lua_nil;
             sol::state_view l(ts);
             sol::table out = l.create_table();
             int n = 0;
-            for (const auto &[k, v] : a.values) {
-                if (k != key) continue;
-                found = true;
-                std::stringstream ss(v);
+            for (auto const *v : found) {
+                std::stringstream ss(*v);
                 std::string item;
                 while (std::getline(ss, item, ',')) out[++n] = item;
             }
-            if (!found) return sol::lua_nil;
             return out;
         }
     );
@@ -521,7 +586,7 @@ sol::table Runtime::buildCtx(PluginInstance &inst) {
     ctx["engine"] = [self](const std::string &path, sol::optional<sol::table> opts) {
         auto it = self->engines.find(path);
         if (it != self->engines.end()) return it->second;
-        std::map<std::string, std::string> options;
+        std::unordered_map<std::string, std::string> options;
         if (opts) {
             for (auto &kv : *opts) {
                 std::string key = kv.first.as<std::string>();
@@ -537,7 +602,7 @@ sol::table Runtime::buildCtx(PluginInstance &inst) {
     };
 
     ctx["open"] = [self](const std::string &path, sol::optional<std::string> mode) {
-        auto w = std::make_shared<Writer>(path, mode.value_or("w"));
+        auto w = std::make_shared<Writer>(path, mode.value_or("w") == "a");
         self->managed.push_back(w);
         return w;
     };
@@ -550,7 +615,7 @@ sol::table Runtime::buildCtx(PluginInstance &inst) {
             sol::protected_function format = l["string"]["format"];
             sol::protected_function_result r = format(fmt, va);
             std::string msg = r.valid() ? r.get<std::string>() : fmt;
-            std::cerr << "[" << name << ":" << current_index_ << "] " << level << ": " << msg << "\n";
+            std::println(stderr, "[{}:{}] {}: {}", name, current_index_, level, msg);
         };
     };
     log["info"] = logger("info");
@@ -595,7 +660,7 @@ bool Runtime::processGame(const std::shared_ptr<Game> &game, std::size_t index) 
                 if (opts_.onError == OnError::Abort) {
                     throw std::runtime_error("plugin '" + inst->name + "' error: " + err.what());
                 }
-                std::cerr << "[" << inst->name << ":" << index << "] error: " << err.what() << "\n";
+                std::println(stderr, "[{}:{}] error: {}", inst->name, index, err.what());
                 if (opts_.onError == OnError::Pass) next.push_back(val);
                 continue;
             }
