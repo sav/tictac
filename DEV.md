@@ -56,6 +56,10 @@ over heap, and the Core Guidelines [0].
 - **No** C-style casts (use `static_cast` etc., or none), C arrays / pointer+length in
   interfaces (use `array`/`vector`/`span`), `#define` for constants/functions, or
   `using namespace std;` in headers.
+- **Always prefix C function calls:** use `std::` when a C++ standard library equivalent exists
+  (e.g., `std::filesystem` instead of C file functions); otherwise prefix with `::` to
+  explicitly use the global namespace (e.g., `::pipe()`, `::write()`, `::read()`, `::fork()`,
+  `::close()`). Never leave C function calls unprefixed.
 - `nullptr`, not `NULL`/`0`. `'\n'`, not `std::endl`.
 - No dangling references/`string_view`/`span` to locals. No premature `shared_ptr` or
   optimization. No silently swallowed errors / empty `catch (...)`.
