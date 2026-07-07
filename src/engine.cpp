@@ -26,29 +26,29 @@ constexpr int kMaxLines = 64; // cap on UCI multipv lines we track
 Engine::Engine(std::string const &path, std::unordered_map<std::string, std::string> const &options) {
     std::array<int, 2> in_pipe;  // parent -> child stdin
     std::array<int, 2> out_pipe; // child stdout -> parent
-    if (pipe(in_pipe.data()) != 0 || pipe(out_pipe.data()) != 0) {
+    if (::pipe(in_pipe.data()) != 0 || ::pipe(out_pipe.data()) != 0) {
         throw std::runtime_error("engine: failed to create pipes");
     }
 
-    pid_ = fork();
+    pid_ = ::fork();
     if (pid_ < 0) {
         throw std::runtime_error("engine: fork failed");
     }
 
     if (pid_ == 0) {
         // Child: wire pipes to stdin/stdout and exec the engine.
-        dup2(in_pipe[0], STDIN_FILENO);
-        dup2(out_pipe[1], STDOUT_FILENO);
-        close(in_pipe[0]);
-        close(in_pipe[1]);
-        close(out_pipe[0]);
-        close(out_pipe[1]);
-        execlp(path.c_str(), path.c_str(), static_cast<char *>(nullptr));
-        _exit(127);
+        ::dup2(in_pipe[0], STDIN_FILENO);
+        ::dup2(out_pipe[1], STDOUT_FILENO);
+        ::close(in_pipe[0]);
+        ::close(in_pipe[1]);
+        ::close(out_pipe[0]);
+        ::close(out_pipe[1]);
+        ::execlp(path.c_str(), path.c_str(), static_cast<char *>(nullptr));
+        ::_exit(127);
     }
 
-    close(in_pipe[0]);
-    close(out_pipe[1]);
+    ::close(in_pipe[0]);
+    ::close(out_pipe[1]);
     to_engine_ = in_pipe[1];
     from_engine_ = out_pipe[0];
 
@@ -64,12 +64,12 @@ Engine::Engine(std::string const &path, std::unordered_map<std::string, std::str
 Engine::~Engine() {
     if (pid_ > 0) {
         send("quit");
-        close(to_engine_);
-        close(from_engine_);
+        ::close(to_engine_);
+        ::close(from_engine_);
         int status = 0;
-        if (waitpid(pid_, &status, WNOHANG) == 0) {
-            kill(pid_, SIGTERM);
-            waitpid(pid_, &status, 0);
+        if (::waitpid(pid_, &status, WNOHANG) == 0) {
+            ::kill(pid_, SIGTERM);
+            ::waitpid(pid_, &status, 0);
         }
     }
 }
@@ -78,7 +78,7 @@ void Engine::send(std::string const &line) {
     std::string data = line + "\n";
     std::ptrdiff_t off = 0;
     while (off < static_cast<std::ptrdiff_t>(data.size())) {
-        std::ptrdiff_t n = write(to_engine_, data.data() + off, data.size() - static_cast<std::size_t>(off));
+        std::ptrdiff_t n = ::write(to_engine_, data.data() + off, data.size() - static_cast<std::size_t>(off));
         if (n <= 0) throw std::runtime_error("engine: write failed");
         off += n;
     }
@@ -94,7 +94,7 @@ std::string Engine::readLine() {
             return line;
         }
         std::array<char, 4096> buf;
-        std::ptrdiff_t n = read(from_engine_, buf.data(), buf.size());
+        std::ptrdiff_t n = ::read(from_engine_, buf.data(), buf.size());
         if (n <= 0) throw std::runtime_error("engine: process closed unexpectedly");
         read_buffer_.append(buf.data(), static_cast<std::size_t>(n));
     }
