@@ -30,9 +30,9 @@ public:
     std::vector<std::pair<std::string, std::string>> headers;
     std::vector<MoveData> moves;
 
-    [[nodiscard]] const std::string *findHeader(const std::string &key) const;
-    void setHeader(const std::string &key, const std::string &value);
-    bool removeHeader(const std::string &key);
+    [[nodiscard]] std::string const *findHeader(std::string const &key) const;
+    void setHeader(std::string const &key, std::string const &value);
+    bool removeHeader(std::string const &key);
 
     [[nodiscard]] std::string result() const;
     [[nodiscard]] std::size_t moveCount() const { return moves.size(); }

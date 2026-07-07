@@ -34,7 +34,7 @@ namespace {
 
     std::string output = "-";
     app.add_option("-o,--output", output, "Where surviving games are written (default: stdout)")
-        ->check([](const std::string &s) { return s.empty() ? std::string("must not be empty") : std::string(); });
+        ->check([](std::string const &s) { return s.empty() ? std::string("must not be empty") : std::string(); });
 
     bool no_output = false;
     app.add_flag("--no-output", no_output, "Discard the default game stream");
@@ -45,7 +45,7 @@ namespace {
 
     try {
         app.parse(argc, argv);
-    } catch (const CLI::ParseError &e) {
+    } catch (CLI::ParseError const &e) {
         return app.exit(e);
     }
 
@@ -56,7 +56,7 @@ namespace {
     else if (on_error == "drop") opts.onError = OnError::Drop;
     else opts.onError = OnError::Abort;
 
-    for (const auto &spec : plugin_specs) {
+    for (auto const &spec : plugin_specs) {
         opts.plugins.push_back(parsePluginSpec(spec));
     }
 
@@ -71,7 +71,7 @@ int App::run() const {
         if (auto code = parseArgs(argc_, argv_, opts)) return *code;
         Runtime runtime(std::move(opts));
         return runtime.run();
-    } catch (const std::exception &e) {
+    } catch (std::exception const &e) {
         std::println(stderr, "error: {}", e.what());
         return 1;
     }

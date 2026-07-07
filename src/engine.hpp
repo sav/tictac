@@ -41,21 +41,21 @@ struct AnalysisLimits {
 // A UCI engine subprocess. Spawned on construction, terminated on destruction.
 class Engine {
 public:
-    Engine(const std::string &path, const std::unordered_map<std::string, std::string> &options);
+    Engine(std::string const &path, std::unordered_map<std::string, std::string> const &options);
     ~Engine();
 
-    Engine(const Engine &) = delete;
-    Engine &operator=(const Engine &) = delete;
+    Engine(Engine const &) = delete;
+    Engine &operator=(Engine const &) = delete;
     Engine(Engine &&) = delete;
     Engine &operator=(Engine &&) = delete;
 
-    void setOption(const std::string &name, const std::string &value);
-    [[nodiscard]] Analysis analyse(const std::string &fen, const AnalysisLimits &limits);
+    void setOption(std::string const &name, std::string const &value);
+    [[nodiscard]] Analysis analyse(std::string const &fen, AnalysisLimits const &limits);
 
 private:
-    void send(const std::string &line);
+    void send(std::string const &line);
     std::string readLine();
-    void waitFor(const std::string &token);
+    void waitFor(std::string const &token);
 
     int to_engine_ = -1;   // write end of engine's stdin
     int from_engine_ = -1; // read end of engine's stdout

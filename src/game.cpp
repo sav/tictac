@@ -16,26 +16,26 @@ namespace {
 constexpr std::size_t kPgnWrapWidth = 80; // soft wrap column for PGN move text
 }
 
-const std::string *Game::findHeader(const std::string &key) const {
-    auto it = std::ranges::find_if(headers, [&](const auto &h) { return h.first == key; });
+std::string const *Game::findHeader(std::string const &key) const {
+    auto it = std::ranges::find_if(headers, [&](auto const &h) { return h.first == key; });
     return it == headers.end() ? nullptr : &it->second;
 }
 
-void Game::setHeader(const std::string &key, const std::string &value) {
-    auto it = std::ranges::find_if(headers, [&](const auto &h) { return h.first == key; });
+void Game::setHeader(std::string const &key, std::string const &value) {
+    auto it = std::ranges::find_if(headers, [&](auto const &h) { return h.first == key; });
     if (it != headers.end()) it->second = value;
     else headers.emplace_back(key, value);
 }
 
-bool Game::removeHeader(const std::string &key) {
-    auto it = std::ranges::find_if(headers, [&](const auto &h) { return h.first == key; });
+bool Game::removeHeader(std::string const &key) {
+    auto it = std::ranges::find_if(headers, [&](auto const &h) { return h.first == key; });
     if (it == headers.end()) return false;
     headers.erase(it);
     return true;
 }
 
 std::string Game::result() const {
-    if (const auto *r = findHeader("Result")) return *r;
+    if (auto const *r = findHeader("Result")) return *r;
     return "*";
 }
 
@@ -43,9 +43,9 @@ chess::Board Game::startBoard() const { return chess::Board(startFen); }
 
 chess::Board Game::boardAt(int ply) const {
     chess::Board board(startFen);
-    const std::size_t limit =
+    std::size_t const limit =
         ply < 0 ? moves.size() : std::min<std::size_t>(static_cast<std::size_t>(ply), moves.size());
-    for (const auto &md : moves | std::views::take(limit)) {
+    for (auto const &md : moves | std::views::take(limit)) {
         board.makeMove(md.move);
     }
     return board;
@@ -53,14 +53,14 @@ chess::Board Game::boardAt(int ply) const {
 
 std::string Game::pgn() const {
     std::string out;
-    for (const auto &[k, v] : headers) {
+    for (auto const &[k, v] : headers) {
         out += "[" + k + " \"" + v + "\"]\n";
     }
     out += '\n';
 
     chess::Board board(startFen);
     std::string line;
-    const auto flush_token = [&](const std::string &token) {
+    auto const flush_token = [&](std::string const &token) {
         if (line.empty()) {
             line = token;
         } else if (line.size() + 1 + token.size() > kPgnWrapWidth) {
@@ -74,8 +74,8 @@ std::string Game::pgn() const {
     };
 
     for (std::size_t i = 0; i < moves.size(); ++i) {
-        const auto &md = moves[i];
-        const bool white = board.sideToMove() == chess::Color::WHITE;
+        auto const &md = moves[i];
+        bool const white = board.sideToMove() == chess::Color::WHITE;
         if (white) {
             flush_token(std::to_string(board.fullMoveNumber()) + ".");
         } else if (i == 0) {

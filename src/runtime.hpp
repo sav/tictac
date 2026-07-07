@@ -28,24 +28,24 @@ class Writer {
 public:
     Writer() = default;
 
-    explicit Writer(const std::string &path, bool append = false) {
+    explicit Writer(std::string const &path, bool append = false) {
         file_.open(path, append ? std::ios::app : std::ios::trunc);
         if (!file_) throw std::runtime_error("cannot open file: " + path);
         os_ = &file_;
     }
 
-    Writer(const Writer &) = delete;
-    Writer &operator=(const Writer &) = delete;
+    Writer(Writer const &) = delete;
+    Writer &operator=(Writer const &) = delete;
     Writer(Writer &&) = delete;
     Writer &operator=(Writer &&) = delete;
 
-    void write(const std::string &text) {
+    void write(std::string const &text) {
         std::print(*os_, "{}", text);
         os_->flush();
         if (!*os_) throw std::runtime_error("writer: write failed");
     }
 
-    void writeGame(const std::shared_ptr<Game> &game) {
+    void writeGame(std::shared_ptr<Game> const &game) {
         std::print(*os_, "{}\n", game->pgn());
         os_->flush();
         if (!*os_) throw std::runtime_error("writer: write failed");
@@ -120,7 +120,7 @@ private:
     sol::table buildCtx(PluginInstance &inst);
 
     // Run one game through the whole pipeline; returns true if a plugin halted.
-    bool processGame(const std::shared_ptr<Game> &game, std::size_t index);
+    bool processGame(std::shared_ptr<Game> const &game, std::size_t index);
 
     RunOptions opts_;
     sol::state lua_;
@@ -131,6 +131,6 @@ private:
 };
 
 // Parse a "file.lua key=value key2=value2" spec into a PluginSpec.
-[[nodiscard]] PluginSpec parsePluginSpec(const std::string &spec);
+[[nodiscard]] PluginSpec parsePluginSpec(std::string const &spec);
 
 } // namespace tictac

@@ -17,27 +17,27 @@ namespace tictac {
 
 namespace {
 
-std::optional<chess::Move> parseMove(const chess::Board &board, std::string_view move) {
+std::optional<chess::Move> parseMove(chess::Board const &board, std::string_view move) {
     // try to parse `move` as SAN first; fall back to matching an UCI format if it fails.
     try {
         return chess::uci::parseSan(board, move);
-    } catch (const chess::uci::SanParseError &) {
-    } catch (const chess::uci::AmbiguousMoveError &) {}
+    } catch (chess::uci::SanParseError const &) {
+    } catch (chess::uci::AmbiguousMoveError const &) {}
     chess::Movelist moves;
     chess::movegen::legalmoves(moves, board);
-    for (const auto &m : moves) {
+    for (auto const &m : moves) {
         if (chess::uci::moveToUci(m) == move) return m;
     }
     return std::nullopt;
 }
 
-LuaMove makeLuaMove(chess::Move mv, const chess::Board &before, std::shared_ptr<Game> game = nullptr, int ply = -1) {
+LuaMove makeLuaMove(chess::Move mv, chess::Board const &before, std::shared_ptr<Game> game = nullptr, int ply = -1) {
     return LuaMove{mv, before, std::move(game), ply};
 }
 
 std::string squareStr(chess::Square sq) { return static_cast<std::string>(sq); }
 
-sol::object pieceAt(sol::this_state ts, const chess::Board &board, const std::string &sq) {
+sol::object pieceAt(sol::this_state ts, chess::Board const &board, std::string const &sq) {
     if (!chess::Square::is_valid_string_sq(sq)) return sol::lua_nil;
     chess::Piece p = board.at(chess::Square(sq));
     if (p == chess::Piece::NONE) return sol::lua_nil;
@@ -55,7 +55,7 @@ int pieceValue(chess::PieceType pt) {
     }
 }
 
-sol::table analysisToTable(sol::state_view lua, const Analysis &a) {
+sol::table analysisToTable(sol::state_view lua, Analysis const &a) {
     sol::table t = lua.create_table();
     if (a.score) t["score"] = *a.score;
     if (a.mate) t["mate"] = *a.mate;
@@ -83,7 +83,7 @@ sol::table analysisToTable(sol::state_view lua, const Analysis &a) {
     return t;
 }
 
-AnalysisLimits readLimits(const sol::table &t) {
+AnalysisLimits readLimits(sol::table const &t) {
     AnalysisLimits lim;
     if (t["depth"].valid()) lim.depth = t.get<int>("depth");
     if (t["movetime"].valid()) lim.movetime = t.get<int>("movetime");
@@ -93,10 +93,10 @@ AnalysisLimits readLimits(const sol::table &t) {
 }
 
 // All values stored for `key`, in the order they were passed (empty if none).
-std::vector<const std::string *>
-findArgs(const std::vector<std::pair<std::string, std::string>> &values, std::string_view key) {
-    std::vector<const std::string *> out;
-    for (const auto &[k, v] : values)
+std::vector<std::string const *>
+findArgs(std::vector<std::pair<std::string, std::string>> const &values, std::string_view key) {
+    std::vector<std::string const *> out;
+    for (auto const &[k, v] : values)
         if (k == key) out.push_back(&v);
     return out;
 }
@@ -104,17 +104,17 @@ findArgs(const std::vector<std::pair<std::string, std::string>> &values, std::st
 // Like findArgs, but drops entries with an explicitly empty value: `key=` is
 // treated the same as `key` being absent. Every accessor except `bool` wants
 // this -- `bool` treats an empty value as an explicit false instead.
-std::vector<const std::string *>
-findNonEmptyArgs(const std::vector<std::pair<std::string, std::string>> &values, std::string_view key) {
-    std::vector<const std::string *> out = findArgs(values, key);
-    std::erase_if(out, [](const std::string *v) { return v->empty(); });
+std::vector<std::string const *>
+findNonEmptyArgs(std::vector<std::pair<std::string, std::string>> const &values, std::string_view key) {
+    std::vector<std::string const *> out = findArgs(values, key);
+    std::erase_if(out, [](std::string const *v) { return v->empty(); });
     return out;
 }
 
 // Coerce the found values with `f`: a lone match yields the scalar, several yield
 // a 1-based array in argument order. `found` must be non-empty.
 template <typename F>
-sol::object scalarOrArray(sol::this_state ts, const std::vector<const std::string *> &found, F f) {
+sol::object scalarOrArray(sol::this_state ts, std::vector<std::string const *> const &found, F f) {
     if (found.size() == 1) return sol::make_object(ts, f(*found.front()));
     sol::state_view lua(ts);
     sol::table out = lua.create_table();
@@ -192,7 +192,7 @@ int Runtime::run() {
 
     std::size_t index = 0;
     bool aborted = false;
-    for (const auto &file : opts_.files) {
+    for (auto const &file : opts_.files) {
         if (aborted) break;
         std::ifstream in(file);
         if (!in) {
@@ -255,19 +255,19 @@ void registerTypes_Move(sol::state_view lua) {
         },
         "comment", [](LuaMove &m, sol::this_state ts) -> sol::object {
             if (m.game && m.ply >= 0) {
-                const auto &c = m.game->moves[static_cast<std::size_t>(m.ply)].comment;
+                auto const &c = m.game->moves[static_cast<std::size_t>(m.ply)].comment;
                 if (!c.empty()) return sol::make_object(ts, c);
             }
             return sol::lua_nil;
         },
-        "setComment", [](LuaMove &m, const std::string &text) {
+        "setComment", [](LuaMove &m, std::string const &text) {
             if (m.game && m.ply >= 0) m.game->moves[static_cast<std::size_t>(m.ply)].comment = text;
         },
         "nags", [](LuaMove &m, sol::this_state ts) {
             sol::state_view l(ts);
             sol::table t = l.create_table();
             if (m.game && m.ply >= 0) {
-                const auto &n = m.game->moves[static_cast<std::size_t>(m.ply)].nags;
+                auto const &n = m.game->moves[static_cast<std::size_t>(m.ply)].nags;
                 for (std::size_t i = 0; i < n.size(); ++i) t[i + 1] = n[i];
             }
             return t;
@@ -282,7 +282,7 @@ void registerTypes_Board(sol::state_view lua) {
     lua.new_usertype<LuaBoard>(
         "Board", sol::no_constructor,
         "fen", [](LuaBoard &b) { return b.board.getFen(); },
-        "setFen", [](LuaBoard &b, const std::string &fen) { b.board.setFen(fen); },
+        "setFen", [](LuaBoard &b, std::string const &fen) { b.board.setFen(fen); },
         "sideToMove", [](LuaBoard &b) {
             return b.board.sideToMove() == chess::Color::WHITE ? std::string("white") : std::string("black");
         },
@@ -292,18 +292,18 @@ void registerTypes_Board(sol::state_view lua) {
             chess::Movelist moves;
             chess::movegen::legalmoves(moves, b.board);
             std::vector<LuaMove> out;
-            for (const auto &m : moves) out.push_back(makeLuaMove(m, b.board));
+            for (auto const &m : moves) out.push_back(makeLuaMove(m, b.board));
             return sol::as_table(out);
         },
-        "isLegal", [](LuaBoard &b, const std::string &mv) { return parseMove(b.board, mv).has_value(); },
-        "makeMove", [](LuaBoard &b, const std::string &mv) {
+        "isLegal", [](LuaBoard &b, std::string const &mv) { return parseMove(b.board, mv).has_value(); },
+        "makeMove", [](LuaBoard &b, std::string const &mv) {
             auto parsed = parseMove(b.board, mv);
             if (!parsed) throw std::runtime_error("illegal move: " + mv);
             LuaBoard nb{b.board};
             nb.board.makeMove(*parsed);
             return nb;
         },
-        "piece", [](LuaBoard &b, const std::string &sq, sol::this_state ts) { return pieceAt(ts, b.board, sq); },
+        "piece", [](LuaBoard &b, std::string const &sq, sol::this_state ts) { return pieceAt(ts, b.board, sq); },
         "pieces", [](LuaBoard &b, sol::optional<sol::table> filter, sol::this_state ts) {
             sol::state_view l(ts);
             sol::table out = l.create_table();
@@ -371,19 +371,19 @@ void registerTypes_Board(sol::state_view lua) {
 void registerTypes_Game(sol::state_view lua) {
     lua.new_usertype<LuaGame>(
         "Game", sol::no_constructor,
-        "header", [](LuaGame &g, const std::string &key, sol::this_state ts) -> sol::object {
-            const std::string *v = g.g->findHeader(key);
+        "header", [](LuaGame &g, std::string const &key, sol::this_state ts) -> sol::object {
+            std::string const *v = g.g->findHeader(key);
             if (!v) return sol::lua_nil;
             return sol::make_object(ts, *v);
         },
         "headers", [](LuaGame &g, sol::this_state ts) {
             sol::state_view l(ts);
             sol::table t = l.create_table();
-            for (const auto &[k, v] : g.g->headers) t[k] = v;
+            for (auto const &[k, v] : g.g->headers) t[k] = v;
             return t;
         },
-        "setHeader", [](LuaGame &g, const std::string &k, const std::string &v) { g.g->setHeader(k, v); },
-        "removeHeader", [](LuaGame &g, const std::string &k) { return g.g->removeHeader(k); },
+        "setHeader", [](LuaGame &g, std::string const &k, std::string const &v) { g.g->setHeader(k, v); },
+        "removeHeader", [](LuaGame &g, std::string const &k) { return g.g->removeHeader(k); },
         "result", [](LuaGame &g) { return g.g->result(); },
         "moveCount", [](LuaGame &g) { return g.g->moveCount(); },
         "moves", [](LuaGame &g) {
@@ -433,7 +433,7 @@ void registerTypes_Writer(sol::state_view lua) {
     lua.new_usertype<Writer>(
         "Writer", sol::no_constructor,
         "write", &Writer::write,
-        "writef", [](Writer &w, sol::this_state ts, const std::string &fmt, sol::variadic_args va) {
+        "writef", [](Writer &w, sol::this_state ts, std::string const &fmt, sol::variadic_args va) {
             sol::state_view l(ts);
             sol::protected_function format = l["string"]["format"];
             sol::protected_function_result r = format(fmt, va);
@@ -450,7 +450,7 @@ void registerTypes_Writer(sol::state_view lua) {
 void registerTypes_Engine(sol::state_view lua) {
     lua.new_usertype<Engine>(
         "Engine", sol::no_constructor,
-        "setOption", [](Engine &e, const std::string &name, sol::object value) {
+        "setOption", [](Engine &e, std::string const &name, sol::object value) {
             e.setOption(name, value.as<std::string>());
         },
         "analyse", [](Engine &e, LuaBoard &b, sol::table limits, sol::this_state ts) {
@@ -474,34 +474,34 @@ void registerTypes_Engine(sol::state_view lua) {
 void registerTypes_Args(sol::state_view lua) {
     lua.new_usertype<Args>(
         "Args", sol::no_constructor,
-        "get", [](Args &a, const std::string &key, sol::optional<sol::object> def, sol::this_state ts) -> sol::object {
-            std::vector<const std::string *> found = findNonEmptyArgs(a.values, key);
+        "get", [](Args &a, std::string const &key, sol::optional<sol::object> def, sol::this_state ts) -> sol::object {
+            std::vector<std::string const *> found = findNonEmptyArgs(a.values, key);
             if (found.empty()) {
                 if (def) return *def;
                 return sol::lua_nil;
             }
-            return scalarOrArray(ts, found, [](const std::string &s) { return s; });
+            return scalarOrArray(ts, found, [](std::string const &s) { return s; });
         },
-        "number", [](Args &a, const std::string &key, sol::optional<double> def, sol::this_state ts) -> sol::object {
-            std::vector<const std::string *> found = findNonEmptyArgs(a.values, key);
+        "number", [](Args &a, std::string const &key, sol::optional<double> def, sol::this_state ts) -> sol::object {
+            std::vector<std::string const *> found = findNonEmptyArgs(a.values, key);
             if (found.empty()) {
                 if (def) return sol::make_object(ts, *def);
                 return sol::lua_nil;
             }
-            return scalarOrArrayChecked(ts, key, "number", found, [](const std::string &s) -> std::optional<double> {
+            return scalarOrArrayChecked(ts, key, "number", found, [](std::string const &s) -> std::optional<double> {
                 double value = 0.0;
                 auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), value);
                 if (ec != std::errc{}) return std::nullopt;
                 return value;
             });
         },
-        "bool", [](Args &a, const std::string &key, sol::optional<bool> def, sol::this_state ts) -> sol::object {
-            std::vector<const std::string *> found = findArgs(a.values, key);
+        "bool", [](Args &a, std::string const &key, sol::optional<bool> def, sol::this_state ts) -> sol::object {
+            std::vector<std::string const *> found = findArgs(a.values, key);
             if (found.empty()) {
                 if (def) return sol::make_object(ts, *def);
                 return sol::lua_nil;
             }
-            return scalarOrArrayChecked(ts, key, "boolean", found, [](const std::string &s) -> std::optional<bool> {
+            return scalarOrArrayChecked(ts, key, "boolean", found, [](std::string const &s) -> std::optional<bool> {
                 if (s.empty()) return false; // `foo=` explicitly disables the flag
                 constexpr std::array<std::string_view, 4> truthy{"true", "1", "yes", "on"};
                 constexpr std::array<std::string_view, 4> falsy{"false", "0", "no", "off"};
@@ -510,13 +510,13 @@ void registerTypes_Args(sol::state_view lua) {
                 return std::nullopt;
             });
         },
-        "require", [](Args &a, const std::string &key, sol::this_state ts) -> sol::object {
-            std::vector<const std::string *> found = findNonEmptyArgs(a.values, key);
+        "require", [](Args &a, std::string const &key, sol::this_state ts) -> sol::object {
+            std::vector<std::string const *> found = findNonEmptyArgs(a.values, key);
             if (found.empty()) throw std::runtime_error("missing required argument: " + key);
-            return scalarOrArray(ts, found, [](const std::string &s) { return s; });
+            return scalarOrArray(ts, found, [](std::string const &s) { return s; });
         },
-        "list", [](Args &a, const std::string &key, sol::this_state ts) -> sol::object {
-            std::vector<const std::string *> found = findNonEmptyArgs(a.values, key);
+        "list", [](Args &a, std::string const &key, sol::this_state ts) -> sol::object {
+            std::vector<std::string const *> found = findNonEmptyArgs(a.values, key);
             if (found.empty()) return sol::lua_nil;
             sol::state_view l(ts);
             sol::table out = l.create_table();
@@ -545,7 +545,7 @@ void Runtime::registerTypes() {
 }
 
 void Runtime::loadPlugins() {
-    for (const auto &spec : opts_.plugins) {
+    for (auto const &spec : opts_.plugins) {
         sol::protected_function_result loaded = lua_.safe_script_file(spec.path, sol::script_pass_on_error);
         if (!loaded.valid()) {
             sol::error err = loaded;
@@ -573,6 +573,7 @@ void Runtime::loadPlugins() {
 }
 
 sol::table Runtime::buildCtx(PluginInstance &inst) {
+    PluginInstance *self = &inst;
     sol::state_view lua = lua_;
     sol::table ctx = lua.create_table();
 
@@ -580,10 +581,7 @@ sol::table Runtime::buildCtx(PluginInstance &inst) {
     ctx["shared"] = shared_;
     ctx["state"] = lua.create_table();
     ctx["out"] = out_;
-
-    PluginInstance *self = &inst;
-
-    ctx["engine"] = [self](const std::string &path, sol::optional<sol::table> opts) {
+    ctx["engine"] = [self](std::string const &path, sol::optional<sol::table> opts) {
         auto it = self->engines.find(path);
         if (it != self->engines.end()) return it->second;
         std::unordered_map<std::string, std::string> options;
@@ -600,17 +598,16 @@ sol::table Runtime::buildCtx(PluginInstance &inst) {
         self->engines[path] = eng;
         return eng;
     };
-
-    ctx["open"] = [self](const std::string &path, sol::optional<std::string> mode) {
+    ctx["open"] = [self](std::string const &path, sol::optional<std::string> mode) {
         auto w = std::make_shared<Writer>(path, mode.value_or("w") == "a");
         self->managed.push_back(w);
         return w;
     };
 
-    const std::string name = inst.name;
+    std::string const name = inst.name;
     sol::table log = lua.create_table();
-    const auto logger = [this, name](const char *level) {
-        return [this, name, level](sol::this_state ts, const std::string &fmt, sol::variadic_args va) {
+    auto const logger = [this, name](char const *level) {
+        return [this, name, level](sol::this_state ts, std::string const &fmt, sol::variadic_args va) {
             sol::state_view l(ts);
             sol::protected_function format = l["string"]["format"];
             sol::protected_function_result r = format(fmt, va);
@@ -627,7 +624,7 @@ sol::table Runtime::buildCtx(PluginInstance &inst) {
     return ctx;
 }
 
-bool Runtime::processGame(const std::shared_ptr<Game> &game, std::size_t index) {
+bool Runtime::processGame(std::shared_ptr<Game> const &game, std::size_t index) {
     sol::state_view lua = lua_;
     bool abort = false;
 
@@ -708,7 +705,7 @@ bool Runtime::processGame(const std::shared_ptr<Game> &game, std::size_t index) 
     return abort;
 }
 
-PluginSpec parsePluginSpec(const std::string &spec) {
+PluginSpec parsePluginSpec(std::string const &spec) {
     PluginSpec plugin;
     std::istringstream iss(spec);
     for (std::string tok; iss >> tok;) {

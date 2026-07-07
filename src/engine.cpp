@@ -22,7 +22,7 @@ namespace {
 constexpr int kMaxLines = 64; // cap on UCI multipv lines we track
 }
 
-Engine::Engine(const std::string &path, const std::unordered_map<std::string, std::string> &options) {
+Engine::Engine(std::string const &path, std::unordered_map<std::string, std::string> const &options) {
     std::array<int, 2> in_pipe;  // parent -> child stdin
     std::array<int, 2> out_pipe; // child stdout -> parent
     if (pipe(in_pipe.data()) != 0 || pipe(out_pipe.data()) != 0) {
@@ -53,7 +53,7 @@ Engine::Engine(const std::string &path, const std::unordered_map<std::string, st
 
     send("uci");
     waitFor("uciok");
-    for (const auto &[name, value] : options) {
+    for (auto const &[name, value] : options) {
         setOption(name, value);
     }
     send("isready");
@@ -73,7 +73,7 @@ Engine::~Engine() {
     }
 }
 
-void Engine::send(const std::string &line) {
+void Engine::send(std::string const &line) {
     std::string data = line + "\n";
     ssize_t off = 0;
     while (off < static_cast<ssize_t>(data.size())) {
@@ -99,17 +99,17 @@ std::string Engine::readLine() {
     }
 }
 
-void Engine::waitFor(const std::string &token) {
+void Engine::waitFor(std::string const &token) {
     for (;;) {
         if (readLine() == token) return;
     }
 }
 
-void Engine::setOption(const std::string &name, const std::string &value) {
+void Engine::setOption(std::string const &name, std::string const &value) {
     send("setoption name " + name + " value " + value);
 }
 
-Analysis Engine::analyse(const std::string &fen, const AnalysisLimits &limits) {
+Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
     if (!limits.depth && !limits.movetime && !limits.nodes) {
         throw std::runtime_error("engine:analyse requires one of depth, movetime or nodes");
     }
