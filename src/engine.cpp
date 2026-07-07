@@ -7,8 +7,8 @@
 
 #include <array>
 #include <bitset>
-#include <cstddef>
 #include <csignal>
+#include <cstddef>
 #include <format>
 #include <sstream>
 #include <stdexcept>
@@ -78,7 +78,7 @@ void Engine::send(std::string const &line) {
     std::string data = line + "\n";
     std::ptrdiff_t off = 0;
     while (off < static_cast<std::ptrdiff_t>(data.size())) {
-        std::ptrdiff_t n = write(to_engine_, data.data() + off, data.size() - off);
+        std::ptrdiff_t n = write(to_engine_, data.data() + off, data.size() - static_cast<std::size_t>(off));
         if (n <= 0) throw std::runtime_error("engine: write failed");
         off += n;
     }
