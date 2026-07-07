@@ -52,18 +52,13 @@ set(LUA_BUILD_BINARY OFF CACHE BOOL "" FORCE)
 set(LUA_BUILD_COMPILER OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(lua)
 
-# sol2 is a header-only C++ <-> Lua binding. We only need its headers; skipping
-# add_subdirectory avoids its internal find_package(Lua) which would not see the
-# FetchContent-built interpreter above.
+# sol2 is a header-only C++ <-> Lua binding.
 FetchContent_Declare(
   sol2
   GIT_REPOSITORY https://github.com/ThePhD/sol2.git
   GIT_TAG c1f95a773c6f8f4fde8ca3efe872e7286afe4444 # 3.5.0 (develop); v3.3.0 fails on Clang 19
 )
-FetchContent_GetProperties(sol2)
-if(NOT sol2_POPULATED)
-  FetchContent_Populate(sol2)
-endif()
+FetchContent_MakeAvailable(sol2)
 
 add_executable(tictac
   src/main.cpp
