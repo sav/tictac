@@ -7,6 +7,7 @@
 
 #include <array>
 #include <bitset>
+#include <cstddef>
 #include <csignal>
 #include <format>
 #include <sstream>
@@ -75,9 +76,9 @@ Engine::~Engine() {
 
 void Engine::send(std::string const &line) {
     std::string data = line + "\n";
-    ssize_t off = 0;
-    while (off < static_cast<ssize_t>(data.size())) {
-        ssize_t n = write(to_engine_, data.data() + off, data.size() - off);
+    std::ptrdiff_t off = 0;
+    while (off < static_cast<std::ptrdiff_t>(data.size())) {
+        std::ptrdiff_t n = write(to_engine_, data.data() + off, data.size() - off);
         if (n <= 0) throw std::runtime_error("engine: write failed");
         off += n;
     }
@@ -93,7 +94,7 @@ std::string Engine::readLine() {
             return line;
         }
         std::array<char, 4096> buf;
-        ssize_t n = read(from_engine_, buf.data(), buf.size());
+        std::ptrdiff_t n = read(from_engine_, buf.data(), buf.size());
         if (n <= 0) throw std::runtime_error("engine: process closed unexpectedly");
         read_buffer_.append(buf.data(), static_cast<std::size_t>(n));
     }
