@@ -48,7 +48,7 @@ over heap, and the Core Guidelines [0].
   `v(3)` is three; use `()` for size/count.
 - Never a raw owning pointer: `unique_ptr`/`shared_ptr` for owned heap, containers for
   sequences, `T*`/`span`/`string_view` for views.
-- Fixed-width ints (`int32_t`, `std::size_t`, `std::ptrdiff_t`) when width matters (serialization, wire, hw).
+- Fixed-width ints (`std::int32_t`, `std::size_t`, `std::ptrdiff_t`) when width matters (serialization, wire, hw).
 - Mark single-arg constructors and conversion operators `explicit` unless implicit is
   wanted.
 - Prefer `enum class`; fix the underlying type for ABI, forward decls, bit width, or
