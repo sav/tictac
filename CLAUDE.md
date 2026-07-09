@@ -5,6 +5,20 @@
 - Always use C++23.
 - Avoid unnecessary comments.
 
+## Writing Style
+
+Applies to everything you write: prose, docs, code comments, commit messages, and
+PR text. Keep it plain ASCII, and don't write in a way that reveals the text was
+produced by an LLM.
+
+- Never use em-dashes (U+2014) or en-dashes (U+2013). Use `--`, or rephrase with a
+  comma, colon, or parentheses.
+- No other fancy Unicode punctuation: no "smart"/curly quotes (use `"` and `'`), no
+  ellipsis character (use `...`). Stick to the ASCII equivalents.
+- Don't write in the tell-tale LLM register: no filler throat-clearing, no
+  formulaic "it's not just X, it's Y" cadences, no reflexive bullet-listing. Write
+  plainly and directly.
+
 ## File Headers
 
 - Every source file (C++, Lua, CMake, shell, etc.) must start with a header:
@@ -35,14 +49,14 @@
 ## Documentation
 
 - Keep `README.md` in sync with the code. Whenever a change affects something the
-  README describes — CLI flags, build steps, dependencies, the plugin model, usage
-  examples, or the project's scope — update the README in the same change.
+  README describes -- CLI flags, build steps, dependencies, the plugin model, usage
+  examples, or the project's scope -- update the README in the same change.
 
 ## Project Tracking
 
 - Whenever something is deferred, stubbed, or left as a reserved/unimplemented interface
   (e.g. an accepted CLI flag that nothing consumes yet), record it in `TODO.md` at the
-  repo root. Don't rely on code comments alone — it's too easy to lose track of what
+  repo root. Don't rely on code comments alone -- it's too easy to lose track of what
   still needs implementing.
 
 ## Git
