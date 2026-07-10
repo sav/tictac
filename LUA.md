@@ -325,7 +325,7 @@ board:isCheckmate()
 board:isStalemate()
 board:isInsufficientMaterial()
 board:isRepetition(count?)
-board:phase()                    -- "opening" | "middlegame" | "endgame" (heuristic)
+board:phase(openingMoves?, endgameThreshold?)   -- "opening" | "middlegame" | "endgame" (heuristic)
 board:material()                 -- { white = n, black = n } in centipawns
 ```
 
@@ -351,7 +351,7 @@ move:addNag(code)
 
 ```lua
 local sf = ctx.engine(ctx.args:get("engine", "stockfish"), {
-  options = { Threads = 4, Hash = 256 },   -- UCI options (setoption)
+  Threads = 4, Hash = 256,   -- UCI options (setoption)
 })
 
 local r = sf:analyse(board, {
