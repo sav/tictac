@@ -196,7 +196,7 @@ It is how a plugin talks to tictac.
 |--------|-------------|
 | `ctx.args` | This plugin's parsed CLI arguments (see accessors below). |
 | `ctx.shared` | A table shared by **all** plugins and **all** games -- global accumulator / cross-plugin channel. |
-| `ctx.state` | A table private to **this** plugin instance -- convenient scratch across hooks. |
+| `ctx.scope` | A table private to **this** plugin instance -- its own scratch space, persisting across hooks. |
 | `ctx.index` | 1-based index of the current game in the database (valid in `process`). |
 | `ctx.engine(path, opts)` | Create / fetch a [UCI engine](#engine) handle (managed & auto-closed). |
 | `ctx.open(path, mode?)` | Open a [Writer](#writer) (managed & auto-closed). `mode`: `"w"` (default, truncates) / `"a"` (append). Reopening the same path truncates -- use `"a"` to append. |
@@ -269,7 +269,7 @@ end
 ### Scope summary
 
 - **`input.data`** → per-game, flows *down* the pipeline (stage to stage).
-- **`ctx.state`** → per-plugin, persists *across games* (this plugin only).
+- **`ctx.scope`** → per-plugin, persists *across games* (this plugin only).
 - **`ctx.shared`** → global, persists across games *and* plugins.
 
 ---
@@ -850,13 +850,13 @@ end
 
 ```lua
 function plugin.init(ctx)
-  ctx.state.sf = ctx.engine(ctx.args:get("engine", "stockfish"))
+  ctx.scope.sf = ctx.engine(ctx.args:get("engine", "stockfish"))
 end
 
 function plugin.process(input, ctx)
   local prev
   for node in input.game:positions() do
-    local cp = ctx.state.sf:cp(node.board, { depth = 16 })   -- white-relative
+    local cp = ctx.scope.sf:cp(node.board, { depth = 16 })   -- white-relative
     if prev and math.abs(cp - prev) >= 200 then
       node.move:setComment(string.format("blunder (%.2f)", cp / 100))
       node.move:addNag(4)                                     -- $4 = "??"
@@ -871,13 +871,13 @@ end
 
 ```lua
 function plugin.init(ctx)
-  ctx.state.seen = {}
+  ctx.scope.seen = {}
 end
 
 function plugin.process(input, ctx)
   local key = input.game:pgn()                  -- or a normalized move-hash
-  if ctx.state.seen[key] then return false end  -- drop duplicate
-  ctx.state.seen[key] = true
+  if ctx.scope.seen[key] then return false end  -- drop duplicate
+  ctx.scope.seen[key] = true
   return input
 end
 ```
@@ -885,15 +885,15 @@ end
 ### Game splitter (one DB → many files)
 
 ```lua
-function plugin.init(ctx)  ctx.state.writers = {} end
+function plugin.init(ctx)  ctx.scope.writers = {} end
 
 function plugin.process(input, ctx)
   local key = input.game:header("ECO") or "NA"
   local dir = ctx.args:get("dir", "out/")
-  local w = ctx.state.writers[key]                         -- cache per path yourself:
+  local w = ctx.scope.writers[key]                         -- cache per path yourself:
   if not w then                                            -- reopening would truncate
     w = ctx.open(dir .. key .. ".pgn")
-    ctx.state.writers[key] = w
+    ctx.scope.writers[key] = w
   end
   w:writeGame(input.game)
   return input
@@ -904,13 +904,13 @@ end
 
 ```lua
 function plugin.init(ctx)
-  ctx.state.w = ctx.open(ctx.args:get("out", "games.csv"))
-  ctx.state.w:write("white,black,result,eco\n")
+  ctx.scope.w = ctx.open(ctx.args:get("out", "games.csv"))
+  ctx.scope.w:write("white,black,result,eco\n")
 end
 
 function plugin.process(input, ctx)
   local g = input.game
-  ctx.state.w:writef("%s,%s,%s,%s\n",
+  ctx.scope.w:writef("%s,%s,%s,%s\n",
     g:header("White"), g:header("Black"), g:result(), g:header("ECO") or "")
   return input
 end
@@ -919,17 +919,17 @@ end
 ### ECO histogram / player report (aggregate, emit in `finish`)
 
 ```lua
-function plugin.init(ctx)  ctx.state.count = {} end
+function plugin.init(ctx)  ctx.scope.count = {} end
 
 function plugin.process(input, ctx)
   local eco = input.game:header("ECO") or "?"
-  ctx.state.count[eco] = (ctx.state.count[eco] or 0) + 1
+  ctx.scope.count[eco] = (ctx.scope.count[eco] or 0) + 1
   return input                                  -- pass games through untouched
 end
 
 function plugin.finish(ctx)
   local w = ctx.open("eco_histogram.txt")
-  for eco, n in pairs(ctx.state.count) do w:writef("%s\t%d\n", eco, n) end
+  for eco, n in pairs(ctx.scope.count) do w:writef("%s\t%d\n", eco, n) end
 end
 ```
 
@@ -939,7 +939,7 @@ end
 -- puzzle.lua: find a tactical shot, hand the position downstream via board+data
 function plugin.process(input, ctx)
   for node in input.game:positions() do
-    local r = ctx.state.sf:analyse(node.board, { depth = 20, multipv = 2 })
+    local r = ctx.scope.sf:analyse(node.board, { depth = 20, multipv = 2 })
     if r.mate and r.mate <= 3 then
       return { game = input.game, board = node.board,
                data = { puzzle = true, mate = r.mate, pv = r.pv } }

@@ -579,7 +579,7 @@ sol::table Runtime::buildCtx(PluginInstance &inst) {
 
     ctx["args"] = inst.args;
     ctx["shared"] = shared_;
-    ctx["state"] = lua.create_table();
+    ctx["scope"] = lua.create_table();
     ctx["out"] = out_;
     ctx["engine"] = [self](std::string const &path, sol::optional<sol::table> opts) {
         auto it = self->engines.find(path);

@@ -18,11 +18,11 @@ plugin.meta = {
 }
 
 function plugin.init(ctx)
-  ctx.state.count = 0
+  ctx.scope.count = 0
 end
 
 function plugin.process(input, ctx)
-  ctx.state.count = ctx.state.count + 1
+  ctx.scope.count = ctx.scope.count + 1
   if ctx.args:bool("verbose", false) then
     ctx.log.info("game %d: %s vs %s", ctx.index,
       input.game:header("White") or "?", input.game:header("Black") or "?")
@@ -31,7 +31,7 @@ function plugin.process(input, ctx)
 end
 
 function plugin.finish(ctx)
-  ctx.log.info("echoed %d game(s)", ctx.state.count)
+  ctx.log.info("echoed %d game(s)", ctx.scope.count)
 end
 
 return plugin
