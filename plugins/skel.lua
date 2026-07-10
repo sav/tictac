@@ -20,7 +20,7 @@ end
 
 function plugin.process(input, ctx)
   return {
-    action = "abort",
+    action = "pass",
     game = input.game,
     data = {},
   }

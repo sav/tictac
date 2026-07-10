@@ -626,7 +626,8 @@ sol::table Runtime::buildCtx(PluginInstance &inst) {
 
 bool Runtime::processGame(std::shared_ptr<Game> const &game, std::size_t index) {
     sol::state_view lua = lua_;
-    bool abort = false;
+    bool stop = false;  // finish this game, then stop reading the database (graceful)
+    bool abort = false; // stop immediately: skip the rest of the pipeline for this game
 
     // The values threaded through the plugin chain: starts as just the game, and each
     // plugin's process() can replace, drop, or fan it out before the next plugin sees it.
@@ -667,11 +668,15 @@ bool Runtime::processGame(std::shared_ptr<Game> const &game, std::size_t index) 
             auto applyResult = [&](sol::table t) {
                 std::string action = t["action"].valid() ? t.get<std::string>("action") : "pass";
                 if (action == "drop") return;
+                if (action == "abort") {
+                    abort = true; // drop the in-flight game and unwind the pipeline
+                    return;
+                }
                 PluginValue out = val;
                 if (t["game"].valid()) out.game = t.get<LuaGame>("game").g;
                 if (t["board"].valid()) out.board = t.get<LuaBoard>("board").board;
                 if (t["data"].valid()) out.data = t.get<sol::object>("data");
-                if (action == "abort") abort = true;
+                if (action == "stop") stop = true;
                 next.push_back(std::move(out));
             };
 
@@ -694,15 +699,19 @@ bool Runtime::processGame(std::shared_ptr<Game> const &game, std::size_t index) 
             } else {
                 next.push_back(val); // unknown -> pass
             }
+
+            if (abort) break;
         }
 
+        if (abort) break;
         frontier = std::move(next);
     }
 
-    if (out_) {
+    // A hard abort drops the in-flight game; a graceful stop still emits it.
+    if (!abort && out_) {
         for (auto &val : frontier) out_->writeGame(val.game);
     }
-    return abort;
+    return stop || abort;
 }
 
 PluginSpec parsePluginSpec(std::string const &spec) {

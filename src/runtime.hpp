@@ -119,7 +119,8 @@ private:
     void loadPlugins();
     sol::table buildCtx(PluginInstance &inst);
 
-    // Run one game through the whole pipeline; returns true if a plugin halted.
+    // Run one game through the whole pipeline; returns true if a plugin asked to stop
+    // reading the database (via a "stop" or "abort" action).
     bool processGame(std::shared_ptr<Game> const &game, std::size_t index);
 
     RunOptions opts_;

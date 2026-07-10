@@ -136,7 +136,7 @@ after `finish`.
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `action` | string | `"pass"` | Flow control: `"pass"`, `"drop"`, or `"abort"`. |
+| `action` | string | `"pass"` | Flow control: `"pass"`, `"drop"`, `"stop"`, or `"abort"`. |
 | `game` | `Game` | `input.game` | Game forwarded to the next plugin. |
 | `board` | `Board` | `input.board` | Board cursor forwarded to the next plugin. |
 | `data` | any | `input.data` | User payload forwarded to the next plugin. |
@@ -159,7 +159,8 @@ end
 |--------|--------|
 | `"pass"` | Forward to the next plugin; if last plugin, the game goes to the default output. |
 | `"drop"` | Remove the game from the pipeline (filters, dedup). Downstream plugins do not see it. |
-| `"abort"` | Stop reading the database entirely after this game (early exit; e.g. `--limit` plugins). `finish` still runs. |
+| `"stop"` | Finish this game through the rest of the pipeline (it is still emitted), then stop reading the database (graceful early exit; e.g. `--limit` plugins). `finish` still runs. |
+| `"abort"` | Stop immediately: skip the rest of the pipeline for this game, drop the in-flight game (not emitted), and stop reading the database. `finish` still runs. |
 
 ### Shorthands
 
@@ -994,9 +995,13 @@ end
 3. A `"drop"` short-circuits the remaining plugins for that game.
 4. After the last plugin, a surviving game (`"pass"`) is written to `ctx.out`
    (unless `--no-output`).
-5. `"abort"` finishes the current game's pipeline, then stops reading the DB.
-6. After all games, each plugin's `finish` runs **in pipeline order**.
-7. All managed engines and writers are closed.
+5. `"stop"` finishes the current game's pipeline (it is still emitted), then stops
+   reading the DB.
+6. `"abort"` skips the rest of the pipeline for the current game, drops that game
+   (it is *not* emitted), then stops reading the DB.
+7. After all games (or after a `"stop"`/`"abort"`), each plugin's `finish` runs
+   **in pipeline order**.
+8. All managed engines and writers are closed.
 
 ### Errors
 
