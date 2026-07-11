@@ -76,6 +76,29 @@ fetched automatically by CMake.
 ./build.sh
 ```
 
+## Testing
+
+The test suite drives the built `tictac` binary through
+[ctest](https://cmake.org/cmake/help/latest/manual/ctest.1.html): each case runs
+a small Lua plugin (under [`tests/plugins/`](tests/plugins/)) over a PGN fixture
+(under [`tests/fixtures/`](tests/fixtures/)) and asserts the plugin contract --
+every return type (valid and invalid), `input.data` flowing down the pipeline,
+per-plugin `ctx.scope`, global `ctx.shared`, and the Game/Board/Move API.
+
+Build and run everything:
+
+```sh
+./test.sh
+```
+
+Or, once the project is built, run the tests on their own (optionally filtering
+by name):
+
+```sh
+ctest --test-dir build --output-on-failure
+ctest --test-dir build -R return_   # only the return-contract tests
+```
+
 ## Writing plugins
 
 A plugin is a Lua file that returns a table. The only required field is
