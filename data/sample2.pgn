@@ -1,24 +1,28 @@
-[Event "rated rapid game"]
-[Site "https://lichess.org/dLojjPet"]
-[Date "2026.06.08"]
-[Round "-"]
-[White "callmecrapbag"]
-[Black "Saavedr"]
-[Result "0-1"]
-[GameId "dLojjPet"]
-[UTCDate "2026.06.08"]
-[UTCTime "22:19:00"]
-[WhiteElo "1500"]
-[BlackElo "1554"]
-[WhiteRatingDiff "-7"]
-[BlackRatingDiff "+6"]
-[Variant "Standard"]
-[TimeControl "900+10"]
-[ECO "E60"]
-[Opening "King's Indian Defense: Normal Variation, King's Knight Variation"]
-[Termination "Normal"]
-[Annotator "lichess.org"]
+[Event "F/S Return Match"]
+[Site "Belgrade, Serbia JUG"]
+[Date "1992.11.04"]
+[Round "29"]
+[White "Fischer, Robert J."]
+[Black "Spassky, Boris V."]
+[Result "1/2-1/2"]
 
-1. d4 { [%eval 0.15] [%clk 0:15:00] } 1... Nf6 { [%eval 0.15] [%clk 0:15:00] } 2. c4 { [%eval 0.16] [%clk 0:15:10] } 2... g6 { [%eval 0.28] [%clk 0:15:08] } 3. Nf3 { [%eval 0.2] [%clk 0:15:16] } { E60 King's Indian Defense: Normal Variation, King's Knight Variation } 3... c5 { [%eval 0.56] [%clk 0:14:54] } 4. d5 { [%eval 0.56] [%clk 0:15:16] } 4... Bg7 { [%eval 0.73] [%clk 0:15:02] } 5. Nc3 { [%eval 0.55] [%clk 0:15:22] } 5... d6 { [%eval 0.65] [%clk 0:14:58] } 6. e4 { [%eval 0.67] [%clk 0:15:29] } 6... Nbd7 { [%eval 0.9] [%clk 0:14:57] } 7. Be3 { [%eval 0.78] [%clk 0:15:25] } 7... Qb6 { [%eval 1.25] [%clk 0:13:53] } 8. Qd2?! { (1.25 → 0.58) Inaccuracy. Qc2 was best. } { [%eval 0.58] [%clk 0:15:23] } (8. Qc2 Qa5 9. Bd3 a6 10. O-O Ng4 11. Bd2 Nge5 12. Nxe5 Nxe5 13. Be2 Nd7) 8... O-O { [%eval 1.09] [%clk 0:13:47] } 9. Bd3?! { (1.09 → 0.02) Inaccuracy. h3 was best. } { [%eval 0.02] [%clk 0:15:20] } (9. h3 Qa5 10. a3 a6 11. Be2 b5 12. O-O bxc4 13. Bxc4 Qc7 14. a4 Nb6) 9... Ng4 { [%eval 0.0] [%clk 0:13:43] } 10. Bg5 { [%eval 0.0] [%clk 0:15:06] } 10... Re8?! { (0.00 → 0.92) Inaccuracy. Nge5 was best. } { [%eval 0.92] [%clk 0:13:16] } (10... Nge5 11. Be2 Nxf3+ 12. gxf3 f6 13. Be3 f5 14. O-O-O Qa5 15. h4 b5 16. cxb5) 11. h3 { [%eval 0.61] [%clk 0:15:12] } 11... Nge5 { [%eval 0.6] [%clk 0:13:23] } 12. Nxe5 { [%eval 0.51] [%clk 0:15:12] } 12... Nxe5 { [%eval 0.63] [%clk 0:12:27] } 13. Be2 { [%eval 0.67] [%clk 0:14:48] } 13... Qb4 { [%eval 0.99] [%clk 0:11:30] } 14. b3?? { (0.99 → -5.02) Blunder. Nb5 was best. } { [%eval -5.02] [%clk 0:14:42] } (14. Nb5 Qxd2+ 15. Kxd2 h6 16. Nc7 hxg5 17. Nxe8 Bh6 18. Nc7 Rb8 19. Nb5 a6) 14... Nf3+ { [%eval -4.45] [%clk 0:11:24] } 15. gxf3 { [%eval -4.25] [%clk 0:14:46] } 15... Bxc3 { [%eval -4.21] [%clk 0:11:32] } { White resigns. } 0-1
+1. e4 e5 2. Nf3 Nc6 3. Bb5 a6 4. Ba4 Nf6 5. O-O Be7 6. Re1 b5 7. Bb3 d6
+8. c3 O-O 9. h3 Nb8 10. d4 Nbd7 1/2-1/2
 
+[Event "Casual Game"]
+[Site "London ENG"]
+[Date "1851.06.21"]
+[Round "?"]
+[White "Anderssen, Adolf"]
+[Black "Kieseritzky, Lionel"]
+[Result "1-0"]
 
+1. e4 e5 2. f4 exf4 3. Bc4 Qh4+ 4. Kf1 b5 5. Bxb5 Nf6 6. Nf3 Qh6
+7. d3 Nh5 8. Nh4 Qg5 9. Nf5 c6 1-0
+
+[Event "Quick Draw"]
+[White "Player, A."]
+[Black "Player, B."]
+[Result "*"]
+
+1. d4 d5 *
