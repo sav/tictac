@@ -86,3 +86,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   -Wunused -Wimplicit-fallthrough $<$<CONFIG:CI>:-Werror>)
   target_compile_options(tictac PRIVATE $<$<CONFIG:Debug>:-g3>)
 endif()
+
+# Test suite: drives the tictac binary through ctest (see tests/CMakeLists.txt).
+enable_testing()
+add_subdirectory(tests)
