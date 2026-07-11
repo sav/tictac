@@ -1,0 +1,17 @@
+CompileFlags:
+  CompilationDatabase: build
+  Add:
+    [
+      -Wall,
+      -Wextra,
+      -I.,
+      -std=c++23,
+      -D_REENTRANT,
+      -fPIC,
+      -I/usr/include/c++/14,
+    ]
+  Compiler: clang++
+InlayHints:
+  Enabled: true
+  ParameterNames: true
+  DeducedTypes: true
