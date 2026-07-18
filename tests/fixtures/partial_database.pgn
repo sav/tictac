@@ -1,0 +1,12 @@
+[Event "Good Game"]
+[White "Alice"]
+[Black "Bob"]
+[Result "1/2-1/2"]
+
+1. d4 d5 2. c4 e6 1/2-1/2
+
+[Event "Broken Header"
+[White "Carol"]
+[Black "Dave"]
+
+1. e4 e5 *

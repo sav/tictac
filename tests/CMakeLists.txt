@@ -110,3 +110,80 @@ tt_case(shared_global -f fixtures/three_games.pgn -p plugins/shared_inc.lua -p "
 # --- API smoke test -------------------------------------------------------------
 
 tt_case(api_smoke -f fixtures/scholars.pgn -p plugins/api_smoke.lua --no-output)
+
+# --- PGN parse errors -----------------------------------------------------------
+# Two distinct paths, and neither may take the run down: an unparseable SAN token
+# (caught per game, that game abandoned) and a StreamParserError from the parser
+# itself (everything parsed before it is kept). games_are.lua pins down *which*
+# games survived, since a count alone cannot tell the right game was dropped.
+#
+# The exit-code cases and the warning-text cases are kept separate on purpose:
+# PASS_REGULAR_EXPRESSION makes the match decide the result and ignores the exit
+# code, so a plugin assertion paired with one would pass vacuously.
+
+tt_case(pgn_bad_move_drops_game  -f fixtures/bad_move.pgn         -p "plugins/games_are.lua expect=Alice,Erin" --no-output)
+tt_case(pgn_bad_move_first       -f fixtures/bad_move_first.pgn   -p "plugins/games_are.lua expect=Carol"      --no-output)
+tt_case(pgn_ambiguous_move       -f fixtures/ambiguous_move.pgn   -p "plugins/games_are.lua expect=Erin"       --no-output)
+tt_case(pgn_two_bad_moves        -f fixtures/two_bad_moves.pgn    -p "plugins/games_are.lua expect=Erin"       --no-output)
+tt_case(pgn_partial_database     -f fixtures/partial_database.pgn -p "plugins/games_are.lua expect=Alice"      --no-output)
+tt_case(pgn_bad_header_no_games  -f fixtures/bad_header.pgn       -p "plugins/games_are.lua expect="           --no-output)
+
+# The warning has to name the offending move and the players, or a skipped game
+# is invisible in a large run.
+tt_error(pgn_bad_move_warns    "skipping game 2 \\(Carol vs Dave\\): cannot parse move 'Qz9'" -f fixtures/bad_move.pgn       -p "plugins/games_are.lua expect=Alice,Erin" --no-output)
+tt_error(pgn_ambiguous_warns   "cannot parse move 'Ne4'"                                      -f fixtures/ambiguous_move.pgn -p "plugins/games_are.lua expect=Erin"       --no-output)
+tt_error(pgn_parse_error_warns "PGN parse error: Invalid header"                              -f fixtures/bad_header.pgn     -p "plugins/games_are.lua expect="           --no-output)
+
+# --- UCI engine driver ----------------------------------------------------------
+# Driven against the mock engines under mock/ rather than a real engine, so the
+# expected values are fixed and the failure modes (a binary that is not an
+# engine, one that dies mid-search) are reproducible. Every case gets a TIMEOUT:
+# the failure modes are exactly the ones that would otherwise hang on a blocking
+# read of an engine that is never going to answer.
+
+# ARGN is a CMake list: join it so the plugin spec stays one argument rather
+# than splitting on the separator into extra -p values.
+function(tt_engine name)
+  string(JOIN " " spec plugins/engine_check.lua ${ARGN})
+  tt_case(${name} -f fixtures/scholars.pgn -p "${spec}" --no-output)
+  set_tests_properties(${name} PROPERTIES TIMEOUT 30)
+endfunction()
+
+function(tt_engine_error name regex)
+  string(JOIN " " spec plugins/engine_check.lua ${ARGN})
+  tt_error(${name} "${regex}" -f fixtures/scholars.pgn -p "${spec}" --no-output)
+  set_tests_properties(${name} PROPERTIES TIMEOUT 30)
+endfunction()
+
+tt_engine(engine_analyse  mode=analyse)
+tt_engine(engine_bestmove mode=bestmove)
+tt_engine(engine_multipv  mode=multipv)
+
+# A mate score must arrive as `mate` with `score` unset.
+tt_engine(engine_mate mode=mate)
+set_tests_properties(engine_mate PROPERTIES ENVIRONMENT "TT_MOCK_SCORE=mate 3")
+
+# Option values must reach the wire in UCI spelling: 16, not 16.000000.
+add_test(NAME engine_options
+  COMMAND ${CMAKE_COMMAND}
+    -DTICTAC=$<TARGET_FILE:tictac>
+    -DWORKDIR=${CMAKE_CURRENT_SOURCE_DIR}
+    -DLOG=${CMAKE_CURRENT_BINARY_DIR}/engine_options.log
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/engine_options.cmake)
+set_tests_properties(engine_options PROPERTIES TIMEOUT 30)
+
+# Failure modes. A dead child can surface either as a failed write (EPIPE, once
+# the child is gone) or as EOF on the next read, depending on how far the child
+# got before exiting -- both are correct, so accept either.
+tt_engine_error(engine_missing_binary "engine: (write failed|process closed unexpectedly)" mode=missing)
+tt_engine_error(engine_not_uci        "engine: (write failed|process closed unexpectedly)" mode=not_uci)
+tt_engine_error(engine_dies_mid_search "engine: (write failed|process closed unexpectedly)" mode=dies)
+
+# A throwing constructor must not leak its pipes. The plugin counts open
+# descriptors either side of a batch of failed spawns, so the leak is measured
+# directly instead of waiting to hit an fd limit that may be enormous.
+tt_engine(engine_no_leak_on_failure mode=leak times=50)
+
+tt_engine_error(engine_no_limits    "requires one of depth, movetime or nodes" mode=no_limits)
+tt_engine_error(engine_multipv_zero "multipv must be between 1 and 64"         mode=multipv_zero)
+tt_engine_error(engine_multipv_huge "multipv must be between 1 and 64"         mode=multipv_huge)

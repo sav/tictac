@@ -85,6 +85,19 @@ a small Lua plugin (under [`tests/plugins/`](tests/plugins/)) over a PGN fixture
 every return type (valid and invalid), `input.data` flowing down the pipeline,
 per-plugin `ctx.scope`, global `ctx.shared`, and the Game/Board/Move API.
 
+Malformed PGN is covered too: an unparseable or ambiguous SAN token abandons
+just that game, and a parse error from the reader keeps everything read before
+it, so both warn and neither aborts the run. Those cases assert which games came
+out the far side, not merely how many.
+
+The UCI engine driver is covered against the mock engines under
+[`tests/mock/`](tests/mock/) rather than a real engine, so no engine needs to be
+installed and the expected analysis values are fixed. Those cases exercise both
+the working path (analysis fields, multipv lines, option spelling on the wire)
+and the failure paths: a binary that does not exist, one that is not an engine,
+and one that dies mid-search. They read `/proc` to check the driver leaks no
+descriptors when a spawn fails, so they expect Linux.
+
 Build and run everything:
 
 ```sh
@@ -97,6 +110,7 @@ by name):
 ```sh
 ctest --test-dir build --output-on-failure
 ctest --test-dir build -R return_   # only the return-contract tests
+ctest --test-dir build -R engine_   # only the UCI engine tests
 ```
 
 ## Writing plugins
