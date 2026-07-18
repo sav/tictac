@@ -778,11 +778,6 @@ ProcessResult processGame_interpretFanOut(sol::table const &table, PluginValue c
 
 ProcessResult processGame_interpret(sol::object ret, PluginValue const &deflt) {
     PluginValue value = deflt;
-    auto const badReturn = [] {
-        return ProcessResult{
-            .values = {}, .error = "bad return value: expected nil, boolean, Board, Game, string or table."
-        };
-    };
 
     switch (ret.get_type()) {
     case sol::type::none: [[fallthrough]];
@@ -816,12 +811,15 @@ ProcessResult processGame_interpret(sol::object ret, PluginValue const &deflt) {
             value.board = game->boardAt(-1);
         } else if (ret.is<LuaBoard>()) {
             value.board = ret.as<LuaBoard>().board;
-        } else return badReturn();
+        } else goto err;
         return {.values = {value}, .error = {}};
     }
     default: break;
     }
-    return badReturn();
+err:
+    return {
+        .values = {}, .error = "bad return value: expected nil, boolean, Board, Game, string or table."
+    };
 }
 
 // Handle a plugin error under the configured policy: throw (Abort) so the
