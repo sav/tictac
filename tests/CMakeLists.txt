@@ -44,7 +44,7 @@ tt_case(return_fanout_stop -f fixtures/three_games.pgn -p "plugins/return_modes.
 
 # --- Return contract: invalid returns are rejected ------------------------------
 
-tt_error(return_invalid_string               "bad return value"                                   -f fixtures/three_games.pgn -p "plugins/return_modes.lua mode=badstring" --no-output)
+tt_error(return_invalid_string               "invalid action 'foo'"                               -f fixtures/three_games.pgn -p "plugins/return_modes.lua mode=badstring" --no-output)
 tt_error(return_invalid_multi                "bad return value"                                   -f fixtures/three_games.pgn -p "plugins/return_modes.lua mode=multi" --no-output)
 tt_error(return_invalid_fanout_key           "fan-out element with an unsupported key 'foo'"      -f fixtures/three_games.pgn -p "plugins/return_modes.lua mode=fanout_badkey" --no-output)
 tt_error(return_invalid_action               "unknown action 'bogus'"                             -f fixtures/three_games.pgn -p "plugins/return_modes.lua mode=bad_action" --no-output)
