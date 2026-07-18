@@ -61,9 +61,25 @@ produced by an LLM.
 
 ## Git
 
-- Always follow the commit message style already used in this project's history
-  (e.g. `git log`) -- match its line length, tone, and use of a body vs. a single
-  line, rather than defaulting to a generic format.
+- **Match the commit message style already in `git log` -- it is the authority.**
+  Before committing, read it: `git log -5 --format='%s%n%b'`, and write messages
+  that look like what you find, whatever that turns out to be.
+
+  In general that style is a **single imperative subject line (<=50 chars) with
+  no body**, followed only by the `Assisted-By: <Model>` trailer:
+
+  ```
+  <imperative subject, <=50 chars>
+
+  Assisted-By: <Model>
+  ```
+
+  So default to that: no paragraph explaining the change, no bullet list, no
+  "why" prose. If the reasoning seems too valuable to lose, it goes in a code
+  comment or the PR body, not the commit. But if the log shows a different
+  pattern (bodies, longer subjects, another convention), follow the log instead
+  -- never impose a generic format the project doesn't use.
+
 - Never use the `Co-Authored-By` tag in commits. Use `Assisted-By: <Model>` instead.
 - Name branches as `claude/<branch>`, typically after the feature.
 - After addressing review comments, commit the changes as a fixup and push to the remote branch.
