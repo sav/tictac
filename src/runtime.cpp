@@ -209,7 +209,8 @@ int Runtime::run() {
             }
         }
     }
-    // Call finish() in pipeline order.
+    // Call finish() in pipeline order. Unlike init(), a failure is only reported:
+    // the games are already emitted, and one bad plugin must not skip the rest.
     for (auto &plugin : plugins_) {
         sol::optional<sol::protected_function> finish = plugin->table["finish"];
         if (finish) {
@@ -390,6 +391,8 @@ void registerTypes_Game(sol::state_view lua) {
         },
         "startBoard", [](LuaGame &g) { return LuaBoard{g.g->startBoard()}; },
         "board", [](LuaGame &g, sol::optional<int> ply) { return LuaBoard{g.g->boardAt(ply.value_or(-1))}; },
+        // Returns a single-use iterator: idx lives in the closure, and game is
+        // captured by shared_ptr because the iterator outlives this LuaGame.
         "positions", [](LuaGame &g, sol::this_state ts) {
             sol::state_view l(ts);
             auto game = g.g;
@@ -453,6 +456,8 @@ void registerTypes_Engine(sol::state_view lua) {
             return e.analyse(b.board.getFen(), helper_readLimits(limits)).bestmove;
         },
         "cp", [](Engine &e, LuaBoard &b, sol::table limits) -> double {
+            // UCI scores are side-to-move relative; report them White-positive,
+            // with mate flattened to a sentinel that orders past any centipawn.
             Analysis a = e.analyse(b.board.getFen(), helper_readLimits(limits));
             double cp = 0.0;
             if (a.mate) cp = (*a.mate >= 0 ? 1.0 : -1.0) * 100000.0;
@@ -569,8 +574,8 @@ sol::table Runtime::buildCtx(PluginInstance &plugin) {
     sol::table ctx = lua.create_table();
 
     ctx["args"] = plugin.args;
-    ctx["shared"] = shared_;
-    ctx["scope"] = lua.create_table();
+    ctx["shared"] = shared_;           // one table for every plugin
+    ctx["scope"] = lua.create_table(); // fresh per plugin, so keys cannot collide
     ctx["out"] = out_;
     ctx["engine"] = [self](std::string const &path, sol::optional<sol::table> opts) {
         auto it = self->engines.find(path);
@@ -597,6 +602,8 @@ sol::table Runtime::buildCtx(PluginInstance &plugin) {
 
     std::string const name = plugin.name;
     sol::table log = lua.create_table();
+    // this is captured so the prefix reports the game being processed at log
+    // time, not the one current when the logger was built.
     auto const logger = [this, name](char const *level) {
         return [this, name, level](sol::this_state ts, std::string const &fmt, sol::variadic_args va) {
             sol::state_view l(ts);
@@ -667,8 +674,8 @@ std::optional<std::string> processGame_checkFieldTypes(sol::table table) {
 
 // Build an output value from `base`, overlaying the game/board/data fields
 // present in `table`.
-PluginValue processGame_valueFrom(sol::table table, PluginValue const& deflt) {
-	PluginValue base = deflt;
+PluginValue processGame_valueFrom(sol::table table, PluginValue const &deflt) {
+    PluginValue base = deflt;
     if (table["game"].valid()) base.game = table.get<LuaGame>("game").g;
     if (table["board"].valid()) base.board = table.get<LuaBoard>("board").board;
     if (table["data"].valid()) base.data = table.get<sol::object>("data");
@@ -691,9 +698,7 @@ ProcessResult processGame_interpretTable(sol::table const &table, PluginValue &&
     if (action != "stop" && action != "pass")
         return {.values = {}, .error = "returned a result table with unknown action '" + action + "'"};
     return {
-        .values = {processGame_valueFrom(table, std::move(deflt))},
-        .stop = action == "stop",
-        .error = {}
+        .values = {processGame_valueFrom(table, std::move(deflt))}, .stop = action == "stop", .error = {}
     };
 }
 
@@ -766,6 +771,8 @@ ProcessResult processGame_interpret(sol::object ret, PluginValue const &deflt) {
     }
     case sol::type::table: {
         sol::table table = ret.as<sol::table>();
+        // A table at index 1 is the only thing marking a fan-out; a flat table
+        // with a stray positional entry is rejected by interpretTable instead.
         if (table[1].is<sol::table>()) return processGame_interpretFanOut(table, value);
         return processGame_interpretTable(table, std::move(value));
     }
@@ -862,6 +869,8 @@ PluginSpec parsePluginSpec(std::string const &spec) {
             plugin.path = tok;
             continue;
         }
+        // Whitespace tokenization means a value cannot contain a space. A bare
+        // token becomes "true", and a repeated key is kept, not overwritten.
         auto eq = tok.find('=');
         if (eq == std::string::npos) {
             plugin.args.emplace_back(tok, "true");
