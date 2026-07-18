@@ -162,6 +162,7 @@ Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
     send(go);
 
     Analysis result;
+    // lines is 0-based, seen is indexed by the raw 1-based UCI multipv number.
     std::vector<AnalysisLine> lines(static_cast<std::size_t>(std::max(1, limits.multipv)));
     std::bitset<kMaxLines> seen;
 
@@ -211,6 +212,7 @@ Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
             }
         }
 
+        // Scoreless info lines (currmove/hashfull) carry no pv and would blank a good slot.
         if (has_score && multipv >= 1 && multipv <= static_cast<int>(lines.size())) {
             lines[static_cast<std::size_t>(multipv - 1)] = cur;
             if (multipv < kMaxLines) seen[static_cast<std::size_t>(multipv)] = true;
