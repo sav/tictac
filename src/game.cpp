@@ -79,6 +79,8 @@ std::string Game::pgn() const {
         if (white) {
             flush_token(std::to_string(board.fullMoveNumber()) + ".");
         } else if (i == 0) {
+            // Only reachable from a startFen with black to move; later black
+            // moves follow their white sibling on the same numbered token.
             flush_token(std::to_string(board.fullMoveNumber()) + "...");
         }
         flush_token(md.san);
@@ -113,6 +115,8 @@ public:
     }
 
     void header(std::string_view key, std::string_view value) override {
+        // PGN guarantees headers precede the moves, so applying FEN here is what
+        // lets move() parse SAN against the position it was played in.
         if (key == "FEN") {
             current_->startFen = std::string(value);
             board_.setFen(value);
@@ -174,6 +178,8 @@ std::vector<std::shared_ptr<Game>> parseGames(std::istream &stream) {
     std::vector<std::shared_ptr<Game>> games;
     Builder builder(games);
     chess::pgn::StreamParser parser(stream);
+    // A malformed game warns rather than throws: everything parsed before the
+    // error is kept and the pipeline runs on that partial database.
     if (auto err = parser.readGames(builder); err.hasError()) {
         std::println(stderr, "warning: PGN parse error: {}", err.message());
     }

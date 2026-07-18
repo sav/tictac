@@ -36,6 +36,7 @@ public:
 
     Writer(Writer const &) = delete;
     Writer &operator=(Writer const &) = delete;
+    // Not movable: os_ points at this object's own file_ member.
     Writer(Writer &&) = delete;
     Writer &operator=(Writer &&) = delete;
 
@@ -98,8 +99,8 @@ struct PluginInstance {
     sol::table ctx;
     std::shared_ptr<Args> args;
     std::string name;
-    std::unordered_map<std::string, std::shared_ptr<Engine>> engines;
-    std::vector<std::shared_ptr<Writer>> managed;
+    std::unordered_map<std::string, std::shared_ptr<Engine>> engines; // one subprocess per path
+    std::vector<std::shared_ptr<Writer>> managed;                     // keeps ctx.open() writers alive
 };
 
 // One element of the pipeline value as it travels between plugins.
