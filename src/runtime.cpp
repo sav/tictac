@@ -228,9 +228,7 @@ int Runtime::run() {
     }
     // Drop the runtime's cached engine handles; ~Engine quits and reaps each
     // subprocess once its last reference (the Lua-held copy included) is gone.
-    for (auto &plugin : plugins_) {
-        plugin->engines.clear();
-    }
+    for (auto &plugin : plugins_) plugin->engines.clear();
     return 0;
 }
 
