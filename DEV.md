@@ -103,6 +103,17 @@ over heap, and the Core Guidelines [0].
   single trailing `return`. Dispatch on a value's type or an action code the same way:
   one guard per branch, returning its own result. It keeps each case self-contained and
   the happy path un-nested.
+- **`goto` is allowed. Do not avoid it on principle, and do not rewrite a working
+  `goto` just because it is a `goto`.** It is sometimes the clearest way to express
+  the flow: a shared cleanup or error path several branches jump to, breaking out of
+  nested loops, or a jump out of a `switch` to common handling. In those cases a
+  `goto` with a well-named label beats the alternatives (a lambda invented only to
+  hold the tail, a `bool done` flag threaded through the loops, or the same three
+  lines copied into every branch), and it is what the C++ Core Guidelines allow too.
+  Judge it like any other construct: keep it when it makes the flow easier to follow,
+  and reach for something else only when it genuinely reads better -- never as a
+  reflex. The guard-clause preference above is about `if / else if` chains; it is not
+  an argument against `goto`.
 - **One consistent error strategy:** exceptions for exceptional failures (STL default);
   `expected<T,E>` for recoverable/value-like errors or where exceptions are banned;
   `optional<T>` for a self-explanatory absence; `error_code` at C/system boundaries.
