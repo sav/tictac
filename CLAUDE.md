@@ -61,6 +61,9 @@ produced by an LLM.
 
 ## Git
 
+- Always follow the commit message style already used in this project's history
+  (e.g. `git log`) -- match its line length, tone, and use of a body vs. a single
+  line, rather than defaulting to a generic format.
 - Never use the `Co-Authored-By` tag in commits. Use `Assisted-By: <Model>` instead.
 - Name branches as `claude/<branch>`, typically after the feature.
 - After addressing review comments, commit the changes as a fixup and push to the remote branch.
