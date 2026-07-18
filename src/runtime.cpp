@@ -6,11 +6,14 @@
 #include "runtime.hpp"
 
 #include <algorithm>
+#include <array>
+#include <charconv>
+#include <cmath>
 #include <cstdio>
 #include <format>
+#include <functional>
 #include <optional>
 #include <print>
-#include <ranges>
 #include <sstream>
 #include <stdexcept>
 
@@ -310,9 +313,17 @@ void registerTypes_Board(sol::state_view lua) {
             if (filter) {
                 sol::table f = *filter;
                 if (f["color"].valid()) {
-                    fc = f.get<std::string>("color") == "white" ? chess::Color::WHITE : chess::Color::BLACK;
+                    std::string const color = f.get<std::string>("color");
+                    if (color == "white") fc = chess::Color::WHITE;
+                    else if (color == "black") fc = chess::Color::BLACK;
+                    else throw std::runtime_error("pieces: color must be 'white' or 'black', got '" + color + "'");
                 }
-                if (f["type"].valid()) ft = chess::PieceType(f.get<std::string>("type"));
+                if (f["type"].valid()) {
+                    std::string const type = f.get<std::string>("type");
+                    ft = chess::PieceType(type);
+                    if (*ft == chess::PieceType::NONE)
+                        throw std::runtime_error("pieces: unknown piece type '" + type + "'");
+                }
             }
             for (int i = 0; i < 64; ++i) {
                 chess::Square sq(i);
@@ -393,17 +404,20 @@ void registerTypes_Game(sol::state_view lua) {
         },
         "startBoard", [](LuaGame &g) { return LuaBoard{g.g->startBoard()}; },
         "board", [](LuaGame &g, sol::optional<int> ply) { return LuaBoard{g.g->boardAt(ply.value_or(-1))}; },
-        // Returns a single-use iterator: idx lives in the closure, and game is
-        // captured by shared_ptr because the iterator outlives this LuaGame.
+        // Returns a single-use iterator: idx and the running board live in the
+        // closure (so the walk stays linear rather than replaying from the start
+        // each step), and game is captured by shared_ptr because the iterator
+        // outlives this LuaGame.
         "positions", [](LuaGame &g, sol::this_state ts) {
             sol::state_view l(ts);
             auto game = g.g;
             auto idx = std::make_shared<std::size_t>(0);
+            auto cursor = std::make_shared<chess::Board>(game->startBoard());
             return sol::make_object(
-                l, std::function<sol::object(sol::this_state)>([game, idx](sol::this_state s) -> sol::object {
+                l, std::function<sol::object(sol::this_state)>([game, idx, cursor](sol::this_state s) -> sol::object {
                     if (*idx >= game->moves.size()) return sol::lua_nil;
                     std::size_t i = *idx;
-                    chess::Board before = game->boardAt(static_cast<int>(i));
+                    chess::Board before = *cursor;
                     chess::Board after = before;
                     after.makeMove(game->moves[i].move);
                     sol::table node = sol::state_view(s).create_table();
@@ -412,6 +426,7 @@ void registerTypes_Game(sol::state_view lua) {
                     node["board_before"] = LuaBoard{before};
                     node["board_after"] = LuaBoard{after};
                     node["board"] = LuaBoard{after};
+                    *cursor = after;
                     ++(*idx);
                     return node;
                 }));
@@ -589,7 +604,13 @@ sol::table Runtime::buildCtx(PluginInstance &plugin) {
                 sol::object value = kv.second;
                 if (value.is<std::string>()) options[key] = value.as<std::string>();
                 else if (value.is<bool>()) options[key] = value.as<bool>() ? "true" : "false";
-                else options[key] = std::to_string(value.as<double>());
+                else {
+                    // UCI spells integer options as plain integers; to_string(double)
+                    // would send "16.000000" for a Lua 16.
+                    double const d = value.as<double>();
+                    options[key] = d == std::trunc(d) ? std::format("{}", static_cast<std::int64_t>(d))
+                                                      : std::format("{}", d);
+                }
             }
         }
         auto eng = std::make_shared<Engine>(path, options);
@@ -597,7 +618,12 @@ sol::table Runtime::buildCtx(PluginInstance &plugin) {
         return eng;
     };
     ctx["open"] = [self](std::string const &path, sol::optional<std::string> mode) {
-        auto w = std::make_shared<Writer>(path, mode.value_or("w") == "a");
+        // Reject anything but "w"/"a": silently truncating on a mode typo would
+        // destroy the file the plugin meant to append to.
+        std::string const m = mode.value_or("w");
+        if (m != "w" && m != "a")
+            throw std::runtime_error("open: mode must be 'w' or 'a', got '" + m + "'");
+        auto w = std::make_shared<Writer>(path, m == "a");
         self->managed.push_back(w);
         return w;
     };
@@ -611,7 +637,10 @@ sol::table Runtime::buildCtx(PluginInstance &plugin) {
             sol::state_view l(ts);
             sol::protected_function format = l["string"]["format"];
             sol::protected_function_result r = format(fmt, va);
-            std::string msg = r.valid() ? r.get<std::string>() : fmt;
+            // A bad format string must not vanish: report it alongside the raw text.
+            std::string const msg = r.valid()
+                                        ? r.get<std::string>()
+                                        : std::format("{} [format error: {}]", fmt, sol::error(r).what());
             std::println(stderr, "[{}:{}] {}: {}", name, current_index_, level, msg);
         };
     };
@@ -750,8 +779,12 @@ ProcessResult processGame_interpretFanOut(sol::table const &table, PluginValue c
 }
 
 ProcessResult processGame_interpret(sol::object ret, PluginValue const &deflt) {
-    ProcessResult res;
     PluginValue value = deflt;
+    auto const badReturn = [] {
+        return ProcessResult{
+            .values = {}, .error = "bad return value: expected nil, boolean, Board, Game, string or table."
+        };
+    };
 
     switch (ret.get_type()) {
     case sol::type::none: [[fallthrough]];
@@ -785,15 +818,12 @@ ProcessResult processGame_interpret(sol::object ret, PluginValue const &deflt) {
             value.board = game->boardAt(-1);
         } else if (ret.is<LuaBoard>()) {
             value.board = ret.as<LuaBoard>().board;
-        } else goto err;
+        } else return badReturn();
         return {.values = {value}, .error = {}};
     }
     default: break;
     }
-err:
-    return {
-        .values = {}, .error = "bad return value: expected nil, boolean, Board, Game, string or table."
-    };
+    return badReturn();
 }
 
 // Handle a plugin error under the configured policy: throw (Abort) so the
@@ -867,7 +897,7 @@ PluginSpec parsePluginSpec(std::string const &spec) {
     PluginSpec plugin;
     std::istringstream iss(spec);
     for (std::string tok; iss >> tok;) {
-        if (plugin.path == "") {
+        if (plugin.path.empty()) {
             plugin.path = tok;
             continue;
         }
