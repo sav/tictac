@@ -170,13 +170,10 @@ Runtime::Runtime(RunOptions opts) : opts_(std::move(opts)) {
 		sol::lib::package
     );
     // clang-format on
-
     shared_ = lua_.create_table();
-
     if (!opts_.noOutput) {
         out_ = opts_.output == "-" ? std::make_shared<Writer>() : std::make_shared<Writer>(opts_.output);
     }
-
     registerTypes();
     loadPlugins();
 }
@@ -190,7 +187,8 @@ int Runtime::run() {
             if (!r.valid()) {
                 sol::error err = r;
                 std::println(stderr, "error: init of '{}': {}", plugin->name, err.what());
-                return 1; // init failure means the plugin can't run; always abort, regardless of --on-error
+                return 1; // init failure means the plugin can't run; always abort, regardless
+                          // of --on-error
             }
         }
     }
@@ -229,7 +227,6 @@ int Runtime::run() {
     for (auto &plugin : plugins_) {
         plugin->engines.clear();
     }
-
     return 0;
 }
 
@@ -630,6 +627,10 @@ struct ProcessResult {
     std::optional<std::string> error; // set when the return value is invalid
 };
 
+// A table with no fields at all conveys no information; reject it rather than
+// silently treating it as an all-defaults pass-through.
+bool processGame_tableIsEmpty(sol::table table) { return table.begin() == table.end(); }
+
 // Return the first key of `table` not present in `allowed`, or `std::nullopt`
 // if all are allowed. `allowArray` skips integer keys, for the top-level
 // fan-out table whose array *is* the payload; everywhere else a positional
@@ -648,10 +649,6 @@ std::optional<std::string> processGame_findUnknownKey(
     return std::nullopt;
 }
 
-// A table with no fields at all conveys no information; reject it rather than
-// silently treating it as an all-defaults pass-through.
-bool processGame_tableIsEmpty(sol::table table) { return table.begin() == table.end(); }
-
 // Extract the `action` field as a string (defaulting to "pass"), or nullopt if
 // it is present but not a string -- sol2's unchecked get<std::string>() would
 // otherwise abort the process on a type mismatch instead of surfacing a plugin
@@ -663,122 +660,133 @@ std::optional<std::string> processGame_getAction(sol::table table) {
     return action.as<std::string>();
 }
 
-// Reject `game`/`board` fields whose value isn't the type processGame_valueFrom
-// expects, for the same reason as processGame_getAction above.
+// Reject `game`/`board` fields whose value isn't of the expected type.
 std::optional<std::string> processGame_checkFieldTypes(sol::table table) {
-    sol::object const game = table["game"];
-    if (game.valid() && !game.is<LuaGame>()) return "field 'game' is not a Game";
-    sol::object const board = table["board"];
-    if (board.valid() && !board.is<LuaBoard>()) return "field 'board' is not a Board";
+    if (table["game"].valid() && !table["game"].is<LuaGame>()) return "field 'game' is not a Game";
+    if (table["board"].valid() && !table["board"].is<LuaBoard>()) return "field 'board' is not a Board";
     return std::nullopt;
 }
 
 // Build an output value from `base`, overlaying the game/board/data fields
 // present in `table`.
-PluginValue processGame_valueFrom(sol::table table, PluginValue const &base) {
-    PluginValue out = base;
-    if (table["game"].valid()) out.game = table.get<LuaGame>("game").g;
-    if (table["board"].valid()) out.board = table.get<LuaBoard>("board").board;
-    if (table["data"].valid()) out.data = table.get<sol::object>("data");
-    return out;
+PluginValue processGame_valueFrom(sol::table table, PluginValue const& deflt) {
+	PluginValue base = deflt;
+    if (table["game"].valid()) base.game = table.get<LuaGame>("game").g;
+    if (table["board"].valid()) base.board = table.get<LuaBoard>("board").board;
+    if (table["data"].valid()) base.data = table.get<sol::object>("data");
+    return base;
+}
+
+// Interprets a single flat table. For nested fan-out tables see
+// `processGame_interpretFanOut`.
+ProcessResult processGame_interpretTable(sol::table const &table, PluginValue &&deflt) {
+    if (processGame_tableIsEmpty(table)) return {.values = {}, .error = "returned an empty table"};
+    if (auto key = processGame_findUnknownKey(table, {"action", "game", "board", "data"}))
+        return {.values = {}, .error = "returned a result table with an unsupported key '" + *key + "'"};
+    if (auto err = processGame_checkFieldTypes(table))
+        return {.values = {}, .error = "returned a result table whose " + *err};
+    auto actionOpt = processGame_getAction(table);
+    if (!actionOpt) return {.values = {}, .error = "returned a result table with a non-string 'action'"};
+    std::string const action = *actionOpt;
+    if (action == "drop") return {};
+    if (action == "abort") return {.values = {}, .abort = true, .error = {}};
+    if (action != "stop" && action != "pass")
+        return {.values = {}, .error = "returned a result table with unknown action '" + action + "'"};
+    return {
+        .values = {processGame_valueFrom(table, std::move(deflt))},
+        .stop = action == "stop",
+        .error = {}
+    };
+}
+
+// Validate a single element of the fan-out table. Return `false` and set
+// `res->error` if it is malformed; `true` if it is well-formed.
+bool processGame_validateFanOutElem(sol::object const &elem, std::size_t index, ProcessResult *res) {
+    if (!elem.is<sol::table>()) {
+        res->error = "returned a fan-out whose element #" + std::to_string(index) + " is not a table";
+        return false;
+    }
+    if (processGame_tableIsEmpty(elem)) {
+        res->error = "returned a fan-out whose element #" + std::to_string(index) + " is empty";
+        return false;
+    }
+    if (auto key = processGame_findUnknownKey(elem, {"game", "board", "data"})) {
+        res->error = "returned a fan-out element with an unsupported key '" + *key + "'";
+        return false;
+    }
+    if (auto err = processGame_checkFieldTypes(elem)) {
+        res->error = "returned a fan-out element whose " + *err;
+        return false;
+    }
+    return true;
+}
+
+ProcessResult processGame_interpretFanOut(sol::table const &table, PluginValue const &deflt) {
+    if (auto key = processGame_findUnknownKey(table, {"action"}, true))
+        return {.values = {}, .error = "returned a fan-out table with an unsupported key '" + *key + "'"};
+    auto actionOpt = processGame_getAction(table);
+    if (!actionOpt) return {.values = {}, .error = "returned a fan-out with a non-string 'action'"};
+    std::string const action = *actionOpt;
+    if (action != "pass" && action != "stop") {
+        return {
+            .values = {},
+            .error = "returned a fan-out with action '" + action +
+                     "'; a fan-out only accepts action 'pass' or 'stop'"
+        };
+    }
+    ProcessResult res = {.values = {}, .stop = action == "stop", .error = {}};
+    std::size_t const n = table.size();
+    res.values.reserve(n);
+    for (std::size_t i = 1; i <= n; ++i) {
+        if (!processGame_validateFanOutElem(table[i], i, &res)) return res;
+        res.values.push_back(processGame_valueFrom(table[i], deflt));
+    }
+    return res;
 }
 
 ProcessResult processGame_interpret(sol::object ret, PluginValue const &deflt) {
-    // bare `return` / nil -> drop, same as `return false`
-    if (ret == sol::lua_nil) return {};
+    ProcessResult res;
+    PluginValue value = deflt;
 
-    if (ret.is<bool>()) {
-        if (!ret.as<bool>()) return {};          // false -> drop
-        return {.values = {deflt}, .error = {}}; // true -> pass
+    switch (ret.get_type()) {
+    case sol::type::none: [[fallthrough]];
+    case sol::type::lua_nil: return {};
+    case sol::type::boolean:
+        return ret.as<bool>() ? ProcessResult{.values = {deflt}, .error = {}} : ProcessResult{};
+    case sol::type::string: {
+        std::string_view const action = ret.as<std::string_view>();
+        if (action == "drop") return {};
+        if (action == "abort") return {.values = {}, .abort = true, .error = {}};
+        if (action == "pass" || action == "stop")
+            return {.values = {deflt}, .stop = action == "stop", .error = {}};
+        return {
+            .values = {},
+            .error = std::format(
+                "returned an invalid action '{}'; expected 'pass', 'drop', 'stop', or 'abort'", action
+            )
+        };
     }
-
-    if (ret.is<LuaBoard>()) {
-        PluginValue out = deflt;
-        out.board = ret.as<LuaBoard>().board;
-        return {.values = {out}, .error = {}};
+    case sol::type::table: {
+        sol::table table = ret.as<sol::table>();
+        if (table[1].is<sol::table>()) return processGame_interpretFanOut(table, value);
+        return processGame_interpretTable(table, std::move(value));
     }
-
-    if (!ret.is<sol::table>()) {
-        return {.values = {}, .error = "bad return value: expected nil, boolean, Board, or table"};
+    case sol::type::userdata: {
+        if (ret.is<LuaGame>()) {
+            std::shared_ptr<Game> game = ret.as<LuaGame>().g;
+            value.game = game;
+            value.board = game->boardAt(-1);
+        } else if (ret.is<LuaBoard>()) {
+            value.board = ret.as<LuaBoard>().board;
+        } else goto err;
+        return {.values = {value}, .error = {}};
     }
-
-    sol::table table = ret.as<sol::table>();
-
-	// Fan-out table.
-	if (table[1].is<sol::table>()) {
-        // Top-level action (default "pass") plus an array of value tables.
-        if (auto key = processGame_findUnknownKey(table, {"action"}, true)) {
-            return {.values = {}, .error = "returned a fan-out with an unsupported key '" + *key + "'"};
-        }
-        auto actionOpt = processGame_getAction(table);
-        if (!actionOpt) {
-            return {.values = {}, .error = "returned a fan-out with a non-string 'action'"};
-        }
-        std::string const action = *actionOpt;
-        if (action != "pass" && action != "stop") {
-            return {
-                .values = {},
-                .error = "returned a fan-out with action '" + action +
-                         "'; a fan-out only accepts action 'pass' or 'stop'"
-            };
-        }
-        std::size_t const n = table.size();
-        for (std::size_t i = 1; i <= n; ++i) {
-            sol::object elem = table[i];
-            if (!elem.is<sol::table>()) {
-                return {
-                    .values = {},
-                    .error = "returned a fan-out whose element #" + std::to_string(i) + " is not a table"
-                };
-            }
-            sol::table const elemTable = elem.as<sol::table>();
-            if (processGame_tableIsEmpty(elemTable)) {
-                return {
-                    .values = {},
-                    .error = "returned a fan-out whose element #" + std::to_string(i) + " is empty"
-                };
-            }
-            if (auto key = processGame_findUnknownKey(elemTable, {"game", "board", "data"})) {
-                return {
-                    .values = {},
-                    .error = "returned a fan-out element with an unsupported key '" + *key + "'"
-                };
-            }
-            if (auto err = processGame_checkFieldTypes(elemTable)) {
-                return {.values = {}, .error = "returned a fan-out element whose " + *err};
-            }
-        }
-        std::vector<PluginValue> values;
-        values.reserve(n);
-        for (std::size_t i = 1; i <= n; ++i)
-            values.push_back(processGame_valueFrom(table.get<sol::table>(i), deflt));
-        return {.values = std::move(values), .stop = action == "stop", .error = {}};
+    default: break;
     }
-
-    // Single result table.
-    if (processGame_tableIsEmpty(table)) {
-        return {.values = {}, .error = "returned an empty table"};
-    }
-    if (auto key = processGame_findUnknownKey(table, {"action", "game", "board", "data"})) {
-        return {.values = {}, .error = "returned a result table with an unsupported key '" + *key + "'"};
-    }
-    if (auto err = processGame_checkFieldTypes(table)) {
-        return {.values = {}, .error = "returned a result table whose " + *err};
-    }
-    auto actionOpt = processGame_getAction(table);
-    if (!actionOpt) {
-        return {.values = {}, .error = "returned a result table with a non-string 'action'"};
-    }
-    std::string const action = *actionOpt;
-    if (action == "drop") return {}; // emit nothing
-    if (action == "abort") {
-        // drop the in-flight game and unwind the pipeline
-        return {.values = {}, .abort = true, .error = {}};
-    }
-    if (action == "pass" || action == "stop") {
-        return {.values = {processGame_valueFrom(table, deflt)}, .stop = action == "stop", .error = {}};
-    }
-    return {.values = {}, .error = "returned a result table with unknown action '" + action + "'"};
+err:
+    return {
+        .values = {}, .error = "bad return value: expected nil, boolean, Board, Game, string or table."
+    };
 }
 
 // Handle a plugin error under the configured policy: throw (Abort) so the
@@ -786,9 +794,10 @@ ProcessResult processGame_interpret(sol::object ret, PluginValue const &deflt) {
 // pass through.
 inline bool
 processGame_onError(OnError onError, std::string_view name, std::size_t index, std::string_view msg) {
-    if (onError == OnError::Abort)
-        throw std::runtime_error(std::format("[{}:{}] error: {}", name, index, msg));
-    std::println(stderr, "[{}:{}] error: {}", name, index, msg);
+    // The message is prefixed with "error: " by whoever reports it (App::run for
+    // the thrown case), so it must not carry its own prefix.
+    if (onError == OnError::Abort) throw std::runtime_error(std::format("[{}:{}] {}", name, index, msg));
+    std::println(stderr, "error: [{}:{}] {}", name, index, msg);
     return onError == OnError::Pass;
 }
 

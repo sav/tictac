@@ -11,3 +11,4 @@ fi
 
 cmake -S . -B build -DCMAKE_CXX_COMPILER=clang++ "$@"
 cmake --build build -j $(nproc) --verbose
+ln -sf build/tictac build/main

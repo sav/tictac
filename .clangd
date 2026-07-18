@@ -1,15 +1,27 @@
 CompileFlags:
-  CompilationDatabase: build
   Add:
     [
       -Wall,
       -Wextra,
+      -Wpedantic,
+      -Wshadow,
+      -Wnon-virtual-dtor,
+      -Wold-style-cast,
+      -Wcast-align,
+      -Wunused,
+      -Woverloaded-virtual,
+      -Wconversion,
+      -Wsign-conversion,
+      -Wnull-dereference,
+      -Wdouble-promotion,
+      -Wformat=2,
+      -Wimplicit-fallthrough,
       -I.,
       -std=c++23,
-      -D_REENTRANT,
       -fPIC,
       -I/usr/include/c++/14,
     ]
+  CompilationDatabase: build
   Compiler: clang++
 InlayHints:
   Enabled: true
