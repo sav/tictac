@@ -1,0 +1,14 @@
+[Event "Ambiguous"]
+[White "Alice"]
+[Black "Bob"]
+[FEN "4k3/8/8/8/8/2N3N1/8/4K3 w - - 0 1"]
+[Result "*"]
+
+1. Ne4 *
+
+[Event "Recovered"]
+[White "Erin"]
+[Black "Frank"]
+[Result "0-1"]
+
+1. c4 c5 2. g3 g6 0-1
