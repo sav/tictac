@@ -6,7 +6,6 @@
 #include "engine.hpp"
 
 #include <array>
-#include <bitset>
 #include <csignal>
 #include <cstddef>
 #include <format>
@@ -150,6 +149,10 @@ Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
     if (!limits.depth && !limits.movetime && !limits.nodes) {
         throw std::runtime_error("engine:analyse requires one of depth, movetime or nodes");
     }
+    if (limits.multipv < 1 || limits.multipv > kMaxLines) {
+        throw std::runtime_error(std::format("engine: multipv must be between 1 and {}", kMaxLines));
+    }
+
     setOption("MultiPV", std::to_string(limits.multipv));
     send("isready");
     waitFor("readyok");
@@ -162,9 +165,9 @@ Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
     send(go);
 
     Analysis result;
-    // lines is 0-based, seen is indexed by the raw 1-based UCI multipv number.
-    std::vector<AnalysisLine> lines(static_cast<std::size_t>(std::max(1, limits.multipv)));
-    std::bitset<kMaxLines> seen;
+    // Indexed by the UCI multipv number minus one; a slot with neither score
+    // nor mate is one the engine never reported.
+    std::vector<AnalysisLine> lines(static_cast<std::size_t>(limits.multipv));
 
     for (;;) {
         std::string line = readLine();
@@ -215,7 +218,6 @@ Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
         // Scoreless info lines (currmove/hashfull) carry no pv and would blank a good slot.
         if (has_score && multipv >= 1 && multipv <= static_cast<int>(lines.size())) {
             lines[static_cast<std::size_t>(multipv - 1)] = cur;
-            if (multipv < kMaxLines) seen[static_cast<std::size_t>(multipv)] = true;
         }
     }
 
@@ -223,9 +225,8 @@ Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
     result.mate = lines[0].mate;
     result.pv = lines[0].pv;
     if (limits.multipv > 1) {
-        for (int i = 1; i <= limits.multipv && i < kMaxLines; ++i) {
-            if (seen[static_cast<std::size_t>(i)])
-                result.lines.push_back(lines[static_cast<std::size_t>(i - 1)]);
+        for (auto const &line : lines) {
+            if (line.score || line.mate) result.lines.push_back(line);
         }
     }
     return result;
