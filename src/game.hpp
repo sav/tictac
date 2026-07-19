@@ -6,7 +6,9 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -31,7 +33,8 @@ public:
     std::vector<std::pair<std::string, std::string>> headers;
     std::vector<MoveData> moves;
 
-    [[nodiscard]] std::string const *findHeader(std::string const &key) const;
+    // The view is invalidated by any later setHeader/removeHeader call.
+    [[nodiscard]] std::optional<std::string_view> findHeader(std::string const &key) const;
     void setHeader(std::string const &key, std::string const &value);
     bool removeHeader(std::string const &key);
 

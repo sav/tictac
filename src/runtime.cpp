@@ -403,7 +403,7 @@ void registerTypes_Game(sol::state_view lua) {
     lua.new_usertype<LuaGame>(
         "Game", sol::no_constructor,
         "header", [](LuaGame &g, std::string const &key, sol::this_state ts) -> sol::object {
-            std::string const *v = g.g->findHeader(key);
+            std::optional<std::string_view> v = g.g->findHeader(key);
             if (!v) return sol::lua_nil;
             return sol::make_object(ts, *v);
         },
@@ -457,9 +457,9 @@ void registerTypes_Game(sol::state_view lua) {
         "pgn", [](LuaGame &g) { return g.g->pgn(); },
         "clone", [](LuaGame &g) { return LuaGame{g.g->clone()}; },
         sol::meta_function::to_string, [](LuaGame &g) {
-            std::string const *white = g.g->findHeader("White");
-            std::string const *black = g.g->findHeader("Black");
-            return std::format("{} vs {}, {}", white ? *white : "?", black ? *black : "?", g.g->result());
+            std::optional<std::string_view> white = g.g->findHeader("White");
+            std::optional<std::string_view> black = g.g->findHeader("Black");
+            return std::format("{} vs {}, {}", white.value_or("?"), black.value_or("?"), g.g->result());
         }
     );
 }

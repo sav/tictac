@@ -16,9 +16,10 @@ namespace {
 constexpr std::size_t kPgnWrapWidth = 80; // soft wrap column for PGN move text
 }
 
-std::string const *Game::findHeader(std::string const &key) const {
+std::optional<std::string_view> Game::findHeader(std::string const &key) const {
     auto it = std::ranges::find_if(headers, [&](auto const &h) { return h.first == key; });
-    return it == headers.end() ? nullptr : &it->second;
+    if (it == headers.end()) return std::nullopt;
+    return it->second;
 }
 
 void Game::setHeader(std::string const &key, std::string const &value) {
@@ -35,7 +36,7 @@ bool Game::removeHeader(std::string const &key) {
 }
 
 std::string Game::result() const {
-    if (auto const *r = findHeader("Result")) return *r;
+    if (auto r = findHeader("Result")) return std::string(*r);
     return "*";
 }
 
@@ -169,11 +170,11 @@ private:
     void failGame(std::string_view move) {
         bad_ = true;
         skipPgn(true);
-        std::string const *white = current_->findHeader("White");
-        std::string const *black = current_->findHeader("Black");
+        std::optional<std::string_view> white = current_->findHeader("White");
+        std::optional<std::string_view> black = current_->findHeader("Black");
         std::println(
             stderr, "warning: skipping game ({} vs {}): cannot parse move '{}'",
-            white ? *white : "?", black ? *black : "?", move
+            white.value_or("?"), black.value_or("?"), move
         );
     }
 
