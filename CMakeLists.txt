@@ -83,7 +83,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(tictac PRIVATE -Wall -Wextra -Wpedantic -Wshadow
   -Wnon-virtual-dtor -Woverloaded-virtual -Wformat=2 -Wimplicit-fallthrough
   -Wold-style-cast -Wconversion -Wcast-align -Wcast-qual -Wnull-dereference
-  -Wunused -Wimplicit-fallthrough $<$<CONFIG:CI>:-Werror>)
+  -Wunused $<$<CONFIG:CI>:-Werror>)
   target_compile_options(tictac PRIVATE $<$<CONFIG:Debug>:-g3>)
 endif()
 
