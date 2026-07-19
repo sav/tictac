@@ -22,7 +22,9 @@ namespace tictac {
 
 namespace {
 
-std::optional<chess::Move> helper_parseMove(chess::Board const &board, std::string_view move) {
+namespace detail {
+
+std::optional<chess::Move> parseMove(chess::Board const &board, std::string_view move) {
     // try to parse `move` as SAN first; fall back to matching an UCI format if it fails.
     try {
         return chess::uci::parseSan(board, move);
@@ -35,22 +37,22 @@ std::optional<chess::Move> helper_parseMove(chess::Board const &board, std::stri
     return std::nullopt;
 }
 
-LuaMove helper_makeLuaMove(
+LuaMove makeLuaMove(
     chess::Move mv, chess::Board const &before, std::shared_ptr<Game> game = nullptr, int ply = -1
 ) {
     return LuaMove{mv, before, std::move(game), ply};
 }
 
-std::string helper_squareStr(chess::Square sq) { return static_cast<std::string>(sq); }
+std::string squareStr(chess::Square sq) { return static_cast<std::string>(sq); }
 
-sol::object helper_pieceAt(sol::this_state ts, chess::Board const &board, std::string const &sq) {
+sol::object pieceAt(sol::this_state ts, chess::Board const &board, std::string const &sq) {
     if (!chess::Square::is_valid_string_sq(sq)) return sol::lua_nil;
     chess::Piece p = board.at(chess::Square(sq));
     if (p == chess::Piece::NONE) return sol::lua_nil;
     return sol::make_object(ts, static_cast<std::string>(p));
 }
 
-int helper_pieceValue(chess::PieceType pt) {
+int pieceValue(chess::PieceType pt) {
     switch (pt.internal()) {
     case chess::PieceType::PAWN: return 100;
     case chess::PieceType::KNIGHT: return 320;
@@ -61,7 +63,7 @@ int helper_pieceValue(chess::PieceType pt) {
     }
 }
 
-sol::table helper_analysisToTable(sol::state_view lua, Analysis const &a) {
+sol::table analysisToTable(sol::state_view lua, Analysis const &a) {
     sol::table table = lua.create_table();
     if (a.score) table["score"] = *a.score;
     if (a.mate) table["mate"] = *a.mate;
@@ -89,7 +91,7 @@ sol::table helper_analysisToTable(sol::state_view lua, Analysis const &a) {
     return table;
 }
 
-AnalysisLimits helper_readLimits(sol::table const &table) {
+AnalysisLimits readLimits(sol::table const &table) {
     AnalysisLimits lim;
     if (table["depth"].valid()) lim.depth = table.get<int>("depth");
     if (table["movetime"].valid()) lim.movetime = table.get<int>("movetime");
@@ -101,7 +103,7 @@ AnalysisLimits helper_readLimits(sol::table const &table) {
 // UCI sends option values as bare text, so a Lua string, number or boolean all
 // have to reach the engine spelled the way UCI expects. Integers in particular
 // must not go out as std::to_string's "16.000000".
-std::string helper_uciOptionValue(sol::object const &value) {
+std::string uciOptionValue(sol::object const &value) {
     if (value.is<std::string>()) return value.as<std::string>();
     if (value.is<bool>()) return value.as<bool>() ? "true" : "false";
     double const d = value.as<double>();
@@ -110,21 +112,20 @@ std::string helper_uciOptionValue(sol::object const &value) {
 
 // All values stored for `key`, in the order they were passed (empty if none).
 std::vector<std::string const *>
-helper_findArgs(std::vector<std::pair<std::string, std::string>> const &values, std::string_view key) {
+findArgs(std::vector<std::pair<std::string, std::string>> const &values, std::string_view key) {
     std::vector<std::string const *> out;
     for (auto const &[k, v] : values)
         if (k == key) out.push_back(&v);
     return out;
 }
 
-// Like helper_findArgs, but drops entries with an explicitly empty value:
+// Like findArgs, but drops entries with an explicitly empty value:
 // `key=` is treated the same as `key` being absent. Every accessor except
 // `bool` wants this -- `bool` treats an empty value as an explicit false
 // instead.
-std::vector<std::string const *> helper_findNonEmptyArgs(
-    std::vector<std::pair<std::string, std::string>> const &values, std::string_view key
-) {
-    std::vector<std::string const *> out = helper_findArgs(values, key);
+std::vector<std::string const *>
+findNonEmptyArgs(std::vector<std::pair<std::string, std::string>> const &values, std::string_view key) {
+    std::vector<std::string const *> out = findArgs(values, key);
     std::erase_if(out, [](std::string const *v) { return v->empty(); });
     return out;
 }
@@ -132,19 +133,19 @@ std::vector<std::string const *> helper_findNonEmptyArgs(
 // Coerce the found values with `f`: a lone match yields the scalar, several
 // yield a 1-based array in argument order. `found` must be non-empty.
 template <typename F>
-sol::object helper_scalarOrArray(sol::this_state ts, std::vector<std::string const *> const &found, F f) {
+sol::object scalarOrArray(sol::this_state ts, std::vector<std::string const *> const &found, F f) {
     if (found.size() == 1) return sol::make_object(ts, f(*found.front()));
     sol::table out = sol::state_view(ts).create_table();
     for (std::size_t i = 0; i < found.size(); ++i) out[i + 1] = f(*found[i]);
     return out;
 }
 
-// Like helper_scalarOrArray, but `f` may reject a value (returning nullopt). On
+// Like scalarOrArray, but `f` may reject a value (returning nullopt). On
 // the first rejection, print an error naming `key`, `typeName` (the expected
 // type), and the offending value to stderr and return nil for the whole call.
 // `found` must be non-empty.
 template <typename F>
-sol::object helper_scalarOrArrayChecked(
+sol::object scalarOrArrayChecked(
     sol::this_state ts,
     std::string_view key,
     std::string_view typeName,
@@ -172,7 +173,7 @@ sol::object helper_scalarOrArrayChecked(
 // Opening the output truncates it, and that happens before run() reads any
 // input, so an --output that names an --file would destroy the database before
 // it is parsed. Refuse instead.
-void helper_rejectOutputOverInput(RunOptions const &opts) {
+void rejectOutputOverInput(RunOptions const &opts) {
     if (opts.noOutput || opts.output == "-") return;
     std::error_code ec;
     for (auto const &file : opts.files) {
@@ -184,10 +185,12 @@ void helper_rejectOutputOverInput(RunOptions const &opts) {
     }
 }
 
+} // namespace detail
+
 } // namespace
 
 Runtime::Runtime(RunOptions opts) : opts_(std::move(opts)) {
-    helper_rejectOutputOverInput(opts_);
+    detail::rejectOutputOverInput(opts_);
     // clang-format off
     lua_.open_libraries(
 		sol::lib::base,
@@ -259,14 +262,16 @@ int Runtime::run() {
 
 namespace {
 
+namespace detail {
+
 // clang-format off
-void registerTypes_Move(sol::state_view lua) {
+void registerMove(sol::state_view lua) {
     lua.new_usertype<LuaMove>(
         "Move", sol::no_constructor,
         "san", [](LuaMove &m) { return chess::uci::moveToSan(m.before, m.move); },
         "uci", [](LuaMove &m) { return chess::uci::moveToUci(m.move); },
-        "from", [](LuaMove &m) { return helper_squareStr(m.move.from()); },
-        "to", [](LuaMove &m) { return helper_squareStr(m.move.to()); },
+        "from", [](LuaMove &m) { return squareStr(m.move.from()); },
+        "to", [](LuaMove &m) { return squareStr(m.move.to()); },
         "piece", [](LuaMove &m) { return static_cast<std::string>(m.before.at<chess::PieceType>(m.move.from())); },
         "isCapture", [](LuaMove &m) { return m.before.isCapture(m.move); },
         "isCheck", [](LuaMove &m) {
@@ -303,7 +308,7 @@ void registerTypes_Move(sol::state_view lua) {
     );
 }
 
-void registerTypes_Board(sol::state_view lua) {
+void registerBoard(sol::state_view lua) {
     lua.new_usertype<LuaBoard>(
         "Board", sol::no_constructor,
         "fen", [](LuaBoard &b) { return b.board.getFen(); },
@@ -317,18 +322,18 @@ void registerTypes_Board(sol::state_view lua) {
             chess::Movelist moves;
             chess::movegen::legalmoves(moves, b.board);
             std::vector<LuaMove> out;
-            for (auto const &m : moves) out.push_back(helper_makeLuaMove(m, b.board));
+            for (auto const &m : moves) out.push_back(makeLuaMove(m, b.board));
             return sol::as_table(out);
         },
-        "isLegal", [](LuaBoard &b, std::string const &mv) { return helper_parseMove(b.board, mv).has_value(); },
+        "isLegal", [](LuaBoard &b, std::string const &mv) { return parseMove(b.board, mv).has_value(); },
         "makeMove", [](LuaBoard &b, std::string const &mv) {
-            auto parsed = helper_parseMove(b.board, mv);
+            auto parsed = parseMove(b.board, mv);
             if (!parsed) throw std::runtime_error("illegal move: " + mv);
             LuaBoard nb{b.board};
             nb.board.makeMove(*parsed);
             return nb;
         },
-        "piece", [](LuaBoard &b, std::string const &sq, sol::this_state ts) { return helper_pieceAt(ts, b.board, sq); },
+        "piece", [](LuaBoard &b, std::string const &sq, sol::this_state ts) { return pieceAt(ts, b.board, sq); },
         "pieces", [](LuaBoard &b, sol::optional<sol::table> filter, sol::this_state ts) {
             sol::table out = sol::state_view(ts).create_table();
             std::optional<chess::Color> fc;
@@ -354,7 +359,7 @@ void registerTypes_Board(sol::state_view lua) {
                 if (p == chess::Piece::NONE) continue;
                 if (fc && p.color() != *fc) continue;
                 if (ft && p.type() != *ft) continue;
-                out[helper_squareStr(sq)] = static_cast<std::string>(p);
+                out[squareStr(sq)] = static_cast<std::string>(p);
             }
             return out;
         },
@@ -376,7 +381,7 @@ void registerTypes_Board(sol::state_view lua) {
                 chess::Piece p = b.board.at(chess::Square(i));
                 if (p == chess::Piece::NONE) continue;
                 if (p.type() == chess::PieceType::PAWN || p.type() == chess::PieceType::KING) continue;
-                total += helper_pieceValue(p.type());
+                total += pieceValue(p.type());
             }
             if (static_cast<int>(b.board.fullMoveNumber()) <= openingMoves.value_or(10)) return std::string("opening");
             if (total <= endgameThreshold.value_or(1300)) return std::string("endgame");
@@ -387,7 +392,7 @@ void registerTypes_Board(sol::state_view lua) {
             for (int i = 0; i < 64; ++i) {
                 chess::Piece p = b.board.at(chess::Square(i));
                 if (p == chess::Piece::NONE) continue;
-                int v = helper_pieceValue(p.type());
+                int v = pieceValue(p.type());
                 if (p.color() == chess::Color::WHITE) white += v;
                 else black += v;
             }
@@ -399,7 +404,7 @@ void registerTypes_Board(sol::state_view lua) {
     );
 }
 
-void registerTypes_Game(sol::state_view lua) {
+void registerGame(sol::state_view lua) {
     lua.new_usertype<LuaGame>(
         "Game", sol::no_constructor,
         "header", [](LuaGame &g, std::string const &key, sol::this_state ts) -> sol::object {
@@ -420,7 +425,7 @@ void registerTypes_Game(sol::state_view lua) {
             std::vector<LuaMove> out;
             chess::Board board = g.g->startBoard();
             for (std::size_t i = 0; i < g.g->moves.size(); ++i) {
-                out.push_back(helper_makeLuaMove(g.g->moves[i].move, board, g.g, static_cast<int>(i)));
+                out.push_back(makeLuaMove(g.g->moves[i].move, board, g.g, static_cast<int>(i)));
                 board.makeMove(g.g->moves[i].move);
             }
             return sol::as_table(out);
@@ -445,7 +450,7 @@ void registerTypes_Game(sol::state_view lua) {
                     after.makeMove(game->moves[i].move);
                     sol::table node = sol::state_view(s).create_table();
                     node["ply"] = i + 1;
-                    node["move"] = helper_makeLuaMove(game->moves[i].move, before, game, static_cast<int>(i));
+                    node["move"] = makeLuaMove(game->moves[i].move, before, game, static_cast<int>(i));
                     node["board_before"] = LuaBoard{before};
                     node["board_after"] = LuaBoard{after};
                     node["board"] = LuaBoard{after};
@@ -464,7 +469,7 @@ void registerTypes_Game(sol::state_view lua) {
     );
 }
 
-void registerTypes_Writer(sol::state_view lua) {
+void registerWriter(sol::state_view lua) {
     lua.new_usertype<Writer>(
         "Writer", sol::no_constructor,
         "write", &Writer::write,
@@ -482,23 +487,23 @@ void registerTypes_Writer(sol::state_view lua) {
     );
 }
 
-void registerTypes_Engine(sol::state_view lua) {
+void registerEngine(sol::state_view lua) {
     lua.new_usertype<Engine>(
         "Engine", sol::no_constructor,
         "setOption", [](Engine &e, std::string const &name, sol::object value) {
-            e.setOption(name, helper_uciOptionValue(value));
+            e.setOption(name, uciOptionValue(value));
         },
         "analyse", [](Engine &e, LuaBoard &b, sol::table limits, sol::this_state ts) {
             sol::state_view l(ts);
-            return helper_analysisToTable(l, e.analyse(b.board.getFen(), helper_readLimits(limits)));
+            return analysisToTable(l, e.analyse(b.board.getFen(), readLimits(limits)));
         },
         "bestmove", [](Engine &e, LuaBoard &b, sol::table limits) {
-            return e.analyse(b.board.getFen(), helper_readLimits(limits)).bestmove;
+            return e.analyse(b.board.getFen(), readLimits(limits)).bestmove;
         },
         "cp", [](Engine &e, LuaBoard &b, sol::table limits) -> double {
             // UCI scores are side-to-move relative; report them White-positive,
             // with mate flattened to a sentinel that orders past any centipawn.
-            Analysis a = e.analyse(b.board.getFen(), helper_readLimits(limits));
+            Analysis a = e.analyse(b.board.getFen(), readLimits(limits));
             double cp = 0.0;
             if (a.mate) cp = (*a.mate >= 0 ? 1.0 : -1.0) * 100000.0;
             else cp = a.score.value_or(0.0);
@@ -508,24 +513,24 @@ void registerTypes_Engine(sol::state_view lua) {
     );
 }
 
-void registerTypes_Args(sol::state_view lua) {
+void registerArgs(sol::state_view lua) {
     lua.new_usertype<Args>(
         "Args", sol::no_constructor,
         "get", [](Args &a, std::string const &key, sol::optional<sol::object> def, sol::this_state ts) -> sol::object {
-            std::vector<std::string const *> found = helper_findNonEmptyArgs(a.values, key);
+            std::vector<std::string const *> found = findNonEmptyArgs(a.values, key);
             if (found.empty()) {
                 if (def) return *def;
                 return sol::lua_nil;
             }
-            return helper_scalarOrArray(ts, found, [](std::string const &s) { return s; });
+            return scalarOrArray(ts, found, [](std::string const &s) { return s; });
         },
         "number", [](Args &a, std::string const &key, sol::optional<double> def, sol::this_state ts) -> sol::object {
-            std::vector<std::string const *> found = helper_findNonEmptyArgs(a.values, key);
+            std::vector<std::string const *> found = findNonEmptyArgs(a.values, key);
             if (found.empty()) {
                 if (def) return sol::make_object(ts, *def);
                 return sol::lua_nil;
             }
-            return helper_scalarOrArrayChecked(ts, key, "number", found, [](std::string const &s) -> std::optional<double> {
+            return scalarOrArrayChecked(ts, key, "number", found, [](std::string const &s) -> std::optional<double> {
                 double value = 0.0;
                 auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), value);
                 if (ec != std::errc{} || ptr != s.data() + s.size()) return std::nullopt;
@@ -533,12 +538,12 @@ void registerTypes_Args(sol::state_view lua) {
             });
         },
         "bool", [](Args &a, std::string const &key, sol::optional<bool> def, sol::this_state ts) -> sol::object {
-            std::vector<std::string const *> found = helper_findArgs(a.values, key);
+            std::vector<std::string const *> found = findArgs(a.values, key);
             if (found.empty()) {
                 if (def) return sol::make_object(ts, *def);
                 return sol::lua_nil;
             }
-            return helper_scalarOrArrayChecked(ts, key, "boolean", found, [](std::string const &s) -> std::optional<bool> {
+            return scalarOrArrayChecked(ts, key, "boolean", found, [](std::string const &s) -> std::optional<bool> {
                 if (s.empty()) return false; // `foo=` explicitly disables the flag
                 constexpr std::array<std::string_view, 4> truthy{"true", "1", "yes", "on"};
                 constexpr std::array<std::string_view, 4> falsy{"false", "0", "no", "off"};
@@ -548,12 +553,12 @@ void registerTypes_Args(sol::state_view lua) {
             });
         },
         "require", [](Args &a, std::string const &key, sol::this_state ts) -> sol::object {
-            std::vector<std::string const *> found = helper_findNonEmptyArgs(a.values, key);
+            std::vector<std::string const *> found = findNonEmptyArgs(a.values, key);
             if (found.empty()) throw std::runtime_error("missing required argument: " + key);
-            return helper_scalarOrArray(ts, found, [](std::string const &s) { return s; });
+            return scalarOrArray(ts, found, [](std::string const &s) { return s; });
         },
         "list", [](Args &a, std::string const &key, sol::this_state ts) -> sol::object {
-            std::vector<std::string const *> found = helper_findNonEmptyArgs(a.values, key);
+            std::vector<std::string const *> found = findNonEmptyArgs(a.values, key);
             if (found.empty()) return sol::lua_nil;
             sol::table out = sol::state_view(ts).create_table();
             int n = 0;
@@ -568,15 +573,17 @@ void registerTypes_Args(sol::state_view lua) {
 }
 // clang-format on
 
+} // namespace detail
+
 } // namespace
 
 void Runtime::registerTypes() {
-    registerTypes_Move(lua_);
-    registerTypes_Board(lua_);
-    registerTypes_Game(lua_);
-    registerTypes_Writer(lua_);
-    registerTypes_Engine(lua_);
-    registerTypes_Args(lua_);
+    detail::registerMove(lua_);
+    detail::registerBoard(lua_);
+    detail::registerGame(lua_);
+    detail::registerWriter(lua_);
+    detail::registerEngine(lua_);
+    detail::registerArgs(lua_);
 }
 
 void Runtime::loadPlugins() {
@@ -623,7 +630,7 @@ sol::table Runtime::buildCtx(PluginInstance &plugin) {
         std::unordered_map<std::string, std::string> options;
         if (opts) {
             for (auto &kv : *opts) {
-                options[kv.first.as<std::string>()] = helper_uciOptionValue(kv.second);
+                options[kv.first.as<std::string>()] = detail::uciOptionValue(kv.second);
             }
         }
         auto eng = std::make_shared<Engine>(path, options);
@@ -676,17 +683,18 @@ struct ProcessResult {
     std::optional<std::string> error; // set when the return value is invalid
 };
 
+namespace detail {
+
 // A table with no fields at all conveys no information; reject it rather than
 // silently treating it as an all-defaults pass-through.
-bool processGame_tableIsEmpty(sol::table table) { return table.begin() == table.end(); }
+bool tableIsEmpty(sol::table table) { return table.begin() == table.end(); }
 
 // Return the first key of `table` not present in `allowed`, or `std::nullopt`
 // if all are allowed. `allowArray` skips integer keys, for the top-level
 // fan-out table whose array *is* the payload; everywhere else a positional
 // entry is itself an unsupported key.
-std::optional<std::string> processGame_findUnknownKey(
-    sol::table table, std::initializer_list<char const *> allowed, bool allowArray = false
-) {
+std::optional<std::string>
+findUnknownKey(sol::table table, std::initializer_list<char const *> allowed, bool allowArray = false) {
     for (auto const &kv : table) {
         if (!kv.first.is<std::string>()) {
             if (allowArray) continue;
@@ -702,7 +710,7 @@ std::optional<std::string> processGame_findUnknownKey(
 // it is present but not a string -- sol2's unchecked get<std::string>() would
 // otherwise abort the process on a type mismatch instead of surfacing a plugin
 // error.
-std::optional<std::string> processGame_getAction(sol::table table) {
+std::optional<std::string> getAction(sol::table table) {
     sol::object const action = table["action"];
     if (!action.valid()) return "pass";
     if (!action.is<std::string>()) return std::nullopt;
@@ -710,7 +718,7 @@ std::optional<std::string> processGame_getAction(sol::table table) {
 }
 
 // Reject `game`/`board` fields whose value isn't of the expected type.
-std::optional<std::string> processGame_checkFieldTypes(sol::table table) {
+std::optional<std::string> checkFieldTypes(sol::table table) {
     if (table["game"].valid() && !table["game"].is<LuaGame>()) return "field 'game' is not a Game";
     if (table["board"].valid() && !table["board"].is<LuaBoard>()) return "field 'board' is not a Board";
     return std::nullopt;
@@ -718,7 +726,7 @@ std::optional<std::string> processGame_checkFieldTypes(sol::table table) {
 
 // Build an output value from `base`, overlaying the game/board/data fields
 // present in `table`.
-PluginValue processGame_valueFrom(sol::table table, PluginValue const &deflt) {
+PluginValue valueFrom(sol::table table, PluginValue const &deflt) {
     PluginValue base = deflt;
     if (table["game"].valid()) base.game = table.get<LuaGame>("game").g;
     if (table["board"].valid()) base.board = table.get<LuaBoard>("board").board;
@@ -727,51 +735,49 @@ PluginValue processGame_valueFrom(sol::table table, PluginValue const &deflt) {
 }
 
 // Interprets a single flat table. For nested fan-out tables see
-// `processGame_interpretFanOut`.
-ProcessResult processGame_interpretTable(sol::table const &table, PluginValue &&deflt) {
-    if (processGame_tableIsEmpty(table)) return {.values = {}, .error = "returned an empty table"};
-    if (auto key = processGame_findUnknownKey(table, {"action", "game", "board", "data"}))
+// `interpretFanOut`.
+ProcessResult interpretTable(sol::table const &table, PluginValue &&deflt) {
+    if (tableIsEmpty(table)) return {.values = {}, .error = "returned an empty table"};
+    if (auto key = findUnknownKey(table, {"action", "game", "board", "data"}))
         return {.values = {}, .error = "returned a result table with an unsupported key '" + *key + "'"};
-    if (auto err = processGame_checkFieldTypes(table))
+    if (auto err = checkFieldTypes(table))
         return {.values = {}, .error = "returned a result table whose " + *err};
-    auto actionOpt = processGame_getAction(table);
+    auto actionOpt = getAction(table);
     if (!actionOpt) return {.values = {}, .error = "returned a result table with a non-string 'action'"};
     std::string const action = *actionOpt;
     if (action == "drop") return {};
     if (action == "abort") return {.values = {}, .abort = true, .error = {}};
     if (action != "stop" && action != "pass")
         return {.values = {}, .error = "returned a result table with unknown action '" + action + "'"};
-    return {
-        .values = {processGame_valueFrom(table, std::move(deflt))}, .stop = action == "stop", .error = {}
-    };
+    return {.values = {valueFrom(table, std::move(deflt))}, .stop = action == "stop", .error = {}};
 }
 
 // Validate a single element of the fan-out table. Return `false` and set
 // `res->error` if it is malformed; `true` if it is well-formed.
-bool processGame_validateFanOutElem(sol::object const &elem, std::size_t index, ProcessResult *res) {
+bool validateFanOutElem(sol::object const &elem, std::size_t index, ProcessResult *res) {
     if (!elem.is<sol::table>()) {
         res->error = "returned a fan-out whose element #" + std::to_string(index) + " is not a table";
         return false;
     }
-    if (processGame_tableIsEmpty(elem)) {
+    if (tableIsEmpty(elem)) {
         res->error = "returned a fan-out whose element #" + std::to_string(index) + " is empty";
         return false;
     }
-    if (auto key = processGame_findUnknownKey(elem, {"game", "board", "data"})) {
+    if (auto key = findUnknownKey(elem, {"game", "board", "data"})) {
         res->error = "returned a fan-out element with an unsupported key '" + *key + "'";
         return false;
     }
-    if (auto err = processGame_checkFieldTypes(elem)) {
+    if (auto err = checkFieldTypes(elem)) {
         res->error = "returned a fan-out element whose " + *err;
         return false;
     }
     return true;
 }
 
-ProcessResult processGame_interpretFanOut(sol::table const &table, PluginValue const &deflt) {
-    if (auto key = processGame_findUnknownKey(table, {"action"}, true))
+ProcessResult interpretFanOut(sol::table const &table, PluginValue const &deflt) {
+    if (auto key = findUnknownKey(table, {"action"}, true))
         return {.values = {}, .error = "returned a fan-out table with an unsupported key '" + *key + "'"};
-    auto actionOpt = processGame_getAction(table);
+    auto actionOpt = getAction(table);
     if (!actionOpt) return {.values = {}, .error = "returned a fan-out with a non-string 'action'"};
     std::string const action = *actionOpt;
     if (action != "pass" && action != "stop") {
@@ -785,13 +791,13 @@ ProcessResult processGame_interpretFanOut(sol::table const &table, PluginValue c
     std::size_t const n = table.size();
     res.values.reserve(n);
     for (std::size_t i = 1; i <= n; ++i) {
-        if (!processGame_validateFanOutElem(table[i], i, &res)) return res;
-        res.values.push_back(processGame_valueFrom(table[i], deflt));
+        if (!validateFanOutElem(table[i], i, &res)) return res;
+        res.values.push_back(valueFrom(table[i], deflt));
     }
     return res;
 }
 
-ProcessResult processGame_interpret(sol::object ret, PluginValue const &deflt) {
+ProcessResult interpret(sol::object ret, PluginValue const &deflt) {
     PluginValue value = deflt;
 
     switch (ret.get_type()) {
@@ -816,8 +822,8 @@ ProcessResult processGame_interpret(sol::object ret, PluginValue const &deflt) {
         sol::table table = ret.as<sol::table>();
         // A table at index 1 is the only thing marking a fan-out; a flat table
         // with a stray positional entry is rejected by interpretTable instead.
-        if (table[1].is<sol::table>()) return processGame_interpretFanOut(table, value);
-        return processGame_interpretTable(table, std::move(value));
+        if (table[1].is<sol::table>()) return interpretFanOut(table, value);
+        return interpretTable(table, std::move(value));
     }
     case sol::type::userdata: {
         if (ret.is<LuaGame>()) {
@@ -840,14 +846,15 @@ err:
 // Handle a plugin error under the configured policy: throw (Abort) so the
 // pipeline unwinds, or log it and report whether the failed value should still
 // pass through.
-inline bool
-processGame_onError(OnError onError, std::string_view name, std::size_t index, std::string_view msg) {
+inline bool onError(OnError onError, std::string_view name, std::size_t index, std::string_view msg) {
     // The message is prefixed with "error: " by whoever reports it (App::run for
     // the thrown case), so it must not carry its own prefix.
     if (onError == OnError::Abort) throw std::runtime_error(std::format("[{}:{}] {}", name, index, msg));
     std::println(stderr, "error: [{}:{}] {}", name, index, msg);
     return onError == OnError::Pass;
 }
+
+} // namespace detail
 
 } // namespace
 
@@ -874,14 +881,14 @@ bool Runtime::processGame(std::shared_ptr<Game> const &game, std::size_t index) 
 
             auto res = plugin->table["process"](input, plugin->ctx);
             if (!res.valid()) {
-                if (processGame_onError(opts_.onError, plugin->name, index, sol::error(res).what()))
+                if (detail::onError(opts_.onError, plugin->name, index, sol::error(res).what()))
                     next.push_back(value);
                 continue;
             }
 
-            ProcessResult result = processGame_interpret(res, value);
+            ProcessResult result = detail::interpret(res, value);
             if (result.error) {
-                if (processGame_onError(opts_.onError, plugin->name, index, *result.error))
+                if (detail::onError(opts_.onError, plugin->name, index, *result.error))
                     next.push_back(value);
                 continue;
             }
