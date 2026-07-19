@@ -27,7 +27,7 @@ struct MoveData {
 // round-trip drops them.
 class Game {
 public:
-    std::string startFen = std::string(chess::constants::STARTPOS);
+    std::string startFen = chess::constants::STARTPOS;
     std::vector<std::pair<std::string, std::string>> headers;
     std::vector<MoveData> moves;
 
