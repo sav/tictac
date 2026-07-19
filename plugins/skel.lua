@@ -1,7 +1,7 @@
 -- SPDX-License-Identifier: GPL-3.0-or-later
 -- Copyright (C) 2026 Savio Sena <savio.sena@gmail.com>
 --
--- skel.lua — a tictac plugin skeleton
+-- skel.lua -- a tictac plugin skeleton
 --
 -- Usage:
 --   tictac --file db.pgn --plugin skel.lua
