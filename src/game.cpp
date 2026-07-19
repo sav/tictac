@@ -116,7 +116,7 @@ std::shared_ptr<Game> Game::clone() const { return std::make_shared<Game>(*this)
 
 namespace {
 
-class Builder : public chess::pgn::Visitor {
+class Builder final : public chess::pgn::Visitor {
 public:
     explicit Builder(std::vector<std::shared_ptr<Game>> &out) : out_(out) {}
 
