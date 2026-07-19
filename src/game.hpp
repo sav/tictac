@@ -14,7 +14,7 @@
 
 namespace tictac {
 
-// One mainline move plus its PGN annotations.
+// A single move of the mainline, plus the PGN annotations attached to it.
 struct MoveData {
     chess::Move move;
     std::string san;
