@@ -58,10 +58,7 @@ namespace {
     else if (on_error == "drop") opts.onError = OnError::Drop;
     else opts.onError = OnError::Abort;
 
-    for (auto const &spec : plugin_specs) {
-        opts.plugins.push_back(parsePluginSpec(spec));
-    }
-
+    for (auto const &spec : plugin_specs) opts.plugins.push_back(parsePluginSpec(spec));
     return std::nullopt;
 }
 
