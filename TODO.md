@@ -43,6 +43,24 @@ so nothing gets silently lost.
   needs both a recursive move model (each `MoveData` owning child lines) and a
   movetext pre-pass or an upstream visitor change to see the variation at all.
 
+## Engine
+
+- **`EINTR` tears down the engine session.** `Engine::send` and `Engine::readLine` treat
+  any `n <= 0` from `::write`/`::read` as fatal. A signal delivered mid-call makes the
+  syscall return -1 with `errno == EINTR`, which is retryable rather than an error, so a
+  well-timed signal kills a working engine with "write failed" or "process closed
+  unexpectedly". Both loops should retry on `EINTR` and only throw for real failures.
+
+- **engine.cpp defines members in a different order than engine.hpp declares them.**
+  DEV.md asks for the definition order to follow the declaration order; the header lists
+  `setOption`/`analyse` before the private helpers, while the `.cpp` puts `handshake` and
+  `shutdown` first. Reordering is a large, purely mechanical diff, so it was left out of
+  the review round that found it.
+
+- **Engine syscall results use `std::ptrdiff_t`, not `ssize_t`.** The `::read`/`::write`
+  return values in engine.cpp are held in `std::ptrdiff_t`; switch them to the POSIX
+  `ssize_t`.
+
 ## Plugins
 
 - **Argument schema validation and `--help`** Plugins may declare a `meta.args`
