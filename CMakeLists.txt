@@ -39,7 +39,10 @@ FetchContent_MakeAvailable(chesslib)
 
 # Lua interpreter (CMake-enabled mirror of the upstream sources). Provides the
 # `lua_static` target used to embed the plugin runtime. Its CMakeLists predates
-# CMake 3.5, so relax the minimum policy version for the sub-build.
+# CMake 3.5, so relax the minimum policy version for the sub-build. The variable
+# is a cache entry, so restoring it afterwards needs FORCE too; when it was unset
+# to begin with the restore leaves an empty entry, which CMake treats as unset.
+set(tt_saved_policy_min "${CMAKE_POLICY_VERSION_MINIMUM}")
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
 FetchContent_Declare(
   lua
@@ -51,6 +54,7 @@ set(LUA_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
 set(LUA_BUILD_BINARY OFF CACHE BOOL "" FORCE)
 set(LUA_BUILD_COMPILER OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(lua)
+set(CMAKE_POLICY_VERSION_MINIMUM "${tt_saved_policy_min}" CACHE STRING "" FORCE)
 
 # sol2 is a header-only C++ <-> Lua binding.
 FetchContent_Declare(
