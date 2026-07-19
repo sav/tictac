@@ -16,9 +16,11 @@ namespace {
 
 constexpr std::size_t kPgnWrapWidth = 80; // soft wrap column for PGN move text
 
+namespace detail {
+
 // A tag value is a quoted string, so the two characters that would end it
 // early have to be backslash-escaped for the game to round-trip.
-std::string helper_escapeTagValue(std::string_view value) {
+std::string escapeTagValue(std::string_view value) {
     std::string out;
     out.reserve(value.size());
     for (char const c : value) {
@@ -27,6 +29,8 @@ std::string helper_escapeTagValue(std::string_view value) {
     }
     return out;
 }
+
+} // namespace detail
 
 } // namespace
 
@@ -69,7 +73,7 @@ chess::Board Game::boardAt(int ply) const {
 std::string Game::pgn() const {
     std::string out;
     for (auto const &[k, v] : headers) {
-        out += "[" + k + " \"" + helper_escapeTagValue(v) + "\"]\n";
+        out += "[" + k + " \"" + detail::escapeTagValue(v) + "\"]\n";
     }
     out += '\n';
 

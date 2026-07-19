@@ -41,9 +41,7 @@ Engine::Engine(std::string const &path, std::unordered_map<std::string, std::str
 
     std::array<int, 2> in_pipe{};  // parent -> child stdin
     std::array<int, 2> out_pipe{}; // child stdout -> parent
-    if (::pipe(in_pipe.data()) != 0) {
-        throw std::runtime_error("engine: failed to create pipes");
-    }
+    if (::pipe(in_pipe.data()) != 0) throw std::runtime_error("engine: failed to create pipes");
     if (::pipe(out_pipe.data()) != 0) {
         ::close(in_pipe[0]);
         ::close(in_pipe[1]);
@@ -51,9 +49,7 @@ Engine::Engine(std::string const &path, std::unordered_map<std::string, std::str
     }
 
     pid_ = ::fork();
-    if (pid_ < 0) {
-        throw std::runtime_error("engine: fork failed");
-    }
+    if (pid_ < 0) throw std::runtime_error("engine: fork failed");
 
     if (pid_ == 0) {
         // Child: wire pipes to stdin/stdout and exec the engine.
@@ -147,7 +143,8 @@ std::string Engine::readLine() {
 }
 
 void Engine::waitFor(std::string const &token) {
-    for (;;) if (readLine() == token) return;
+    for (;;)
+        if (readLine() == token) return;
 }
 
 void Engine::setOption(std::string const &name, std::string const &value) {
@@ -155,14 +152,6 @@ void Engine::setOption(std::string const &name, std::string const &value) {
 }
 
 namespace {
-
-std::string analyse_goCommand(AnalysisLimits const &limits) {
-    std::string go = "go";
-    if (limits.depth) go += std::format(" depth {}", *limits.depth);
-    if (limits.movetime) go += std::format(" movetime {}", *limits.movetime);
-    if (limits.nodes) go += std::format(" nodes {}", *limits.nodes);
-    return go;
-}
 
 // One parsed "info" line. `slot` is the 1-based multipv index it describes, and
 // `scored` records whether it carried a score at all -- depth/nodes/time/nps
@@ -173,7 +162,17 @@ struct InfoLine {
     bool scored = false;
 };
 
-InfoLine analyse_parseInfo(std::istringstream &iss, Analysis &overall) {
+namespace detail {
+
+std::string goCommand(AnalysisLimits const &limits) {
+    std::string go = "go";
+    if (limits.depth) go += std::format(" depth {}", *limits.depth);
+    if (limits.movetime) go += std::format(" movetime {}", *limits.movetime);
+    if (limits.nodes) go += std::format(" nodes {}", *limits.nodes);
+    return go;
+}
+
+InfoLine parseInfo(std::istringstream &iss, Analysis &overall) {
     InfoLine info;
     std::string tok;
     while (iss >> tok) {
@@ -209,7 +208,7 @@ InfoLine analyse_parseInfo(std::istringstream &iss, Analysis &overall) {
     return info;
 }
 
-void analyse_collect(Analysis &result, std::vector<AnalysisLine> const &lines, int multipv) {
+void collect(Analysis &result, std::vector<AnalysisLine> const &lines, int multipv) {
     result.score = lines[0].score;
     result.mate = lines[0].mate;
     result.pv = lines[0].pv;
@@ -219,21 +218,21 @@ void analyse_collect(Analysis &result, std::vector<AnalysisLine> const &lines, i
     }
 }
 
+} // namespace detail
+
 } // namespace
 
 Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
-    if (!limits.depth && !limits.movetime && !limits.nodes) {
+    if (!limits.depth && !limits.movetime && !limits.nodes)
         throw std::runtime_error("engine:analyse requires one of depth, movetime or nodes");
-    }
-    if (limits.multipv < 1 || limits.multipv > kMaxLines) {
+    if (limits.multipv < 1 || limits.multipv > kMaxLines)
         throw std::runtime_error(std::format("engine: multipv must be between 1 and {}", kMaxLines));
-    }
 
     setOption("MultiPV", std::to_string(limits.multipv));
     send("isready");
     waitFor("readyok");
     send("position fen " + fen);
-    send(analyse_goCommand(limits));
+    send(detail::goCommand(limits));
 
     Analysis result;
     // Indexed by the UCI multipv number minus one; a slot with neither score
@@ -251,14 +250,13 @@ Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
         }
         if (tok != "info") continue;
 
-        InfoLine info = analyse_parseInfo(iss, result);
+        InfoLine info = detail::parseInfo(iss, result);
         // Scoreless info lines (currmove/hashfull) carry no pv and would blank a good slot.
-        if (info.scored && info.slot >= 1 && info.slot <= static_cast<int>(lines.size())) {
+        if (info.scored && info.slot >= 1 && info.slot <= static_cast<int>(lines.size()))
             lines[static_cast<std::size_t>(info.slot - 1)] = std::move(info.line);
-        }
     }
 
-    analyse_collect(result, lines, limits.multipv);
+    detail::collect(result, lines, limits.multipv);
     return result;
 }
 
