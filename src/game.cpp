@@ -13,8 +13,22 @@
 namespace tictac {
 
 namespace {
+
 constexpr std::size_t kPgnWrapWidth = 80; // soft wrap column for PGN move text
+
+// A tag value is a quoted string, so the two characters that would end it
+// early have to be backslash-escaped for the game to round-trip.
+std::string helper_escapeTagValue(std::string_view value) {
+    std::string out;
+    out.reserve(value.size());
+    for (char const c : value) {
+        if (c == '"' || c == '\\') out += '\\';
+        out += c;
+    }
+    return out;
 }
+
+} // namespace
 
 std::optional<std::string_view> Game::findHeader(std::string const &key) const {
     auto it = std::ranges::find_if(headers, [&](auto const &h) { return h.first == key; });
@@ -53,21 +67,9 @@ chess::Board Game::boardAt(int ply) const {
 }
 
 std::string Game::pgn() const {
-    // A tag value is a quoted string, so the two characters that would end it
-    // early have to be backslash-escaped for the game to round-trip.
-    auto const escape_tag = [](std::string_view v) {
-        std::string out;
-        out.reserve(v.size());
-        for (char const c : v) {
-            if (c == '"' || c == '\\') out += '\\';
-            out += c;
-        }
-        return out;
-    };
-
     std::string out;
     for (auto const &[k, v] : headers) {
-        out += "[" + k + " \"" + escape_tag(v) + "\"]\n";
+        out += "[" + k + " \"" + helper_escapeTagValue(v) + "\"]\n";
     }
     out += '\n';
 
