@@ -111,6 +111,14 @@ tt_case(shared_global -f fixtures/three_games.pgn -p plugins/shared_inc.lua -p "
 
 tt_case(api_smoke -f fixtures/scholars.pgn -p plugins/api_smoke.lua --no-output)
 
+# --- ctx.args accessors ---------------------------------------------------------
+# The argument spec is fixed here and args_check.lua asserts every accessor
+# against it, malformed values included. A failed assert in init() aborts the
+# run, so a non-zero exit is what ctest sees.
+
+tt_case(args_accessors -f fixtures/scholars.pgn --no-output
+  -p "plugins/args_check.lua one=1 many=a many=b nums=1 nums=2 empty= flag yes=yes off=off tags=a,b,c junk=20abc word=abc maybe=perhaps neg=-3 frac=1.5")
+
 # --- PGN parse errors -----------------------------------------------------------
 # Two distinct paths, and neither may take the run down: an unparseable SAN token
 # (caught per game, that game abandoned) and a StreamParserError from the parser
