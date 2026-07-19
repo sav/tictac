@@ -39,7 +39,12 @@ Engine::Engine(std::string const &path, std::unordered_map<std::string, std::str
 
     std::array<int, 2> in_pipe;  // parent -> child stdin
     std::array<int, 2> out_pipe; // child stdout -> parent
-    if (::pipe(in_pipe.data()) != 0 || ::pipe(out_pipe.data()) != 0) {
+    if (::pipe(in_pipe.data()) != 0) {
+        throw std::runtime_error("engine: failed to create pipes");
+    }
+    if (::pipe(out_pipe.data()) != 0) {
+        ::close(in_pipe[0]);
+        ::close(in_pipe[1]);
         throw std::runtime_error("engine: failed to create pipes");
     }
 
