@@ -71,9 +71,11 @@ over heap, and the Core Guidelines [0].
   a comment at the definition site.
 - Define functions in the `.cpp` in the same order they are declared in the `.hpp`.
 - When a function `foobar` is comprised of distinct "sections", break each out into a
-  `foobar_<secname>` helper rather than leaving one long body. If `foobar` is a public API,
-  keep the section helpers TU-local: put them in an anonymous namespace directly above
-  `foobar`'s definition, so they don't leak into the header.
+  `detail::<secname>` helper rather than leaving one long body. If `foobar` is a public API,
+  keep the section helpers TU-local: put them in a `detail` namespace nested inside an
+  anonymous namespace above `foobar`'s definition, so they keep internal linkage and don't
+  leak into the header. Types the enclosing code also names (a result struct returned to
+  `foobar`) stay in the anonymous namespace, outside `detail`.
 - Follow existing project style; else pick one and stay consistent.
 - **Comment the why, not the what**; API docstrings and file headers excepted.
 - **No divider comments** (`// -- Foo ------`) outside functions. Inside a function you may
