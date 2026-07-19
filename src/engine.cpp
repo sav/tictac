@@ -92,9 +92,7 @@ Engine::~Engine() { shutdown(); }
 void Engine::handshake(std::unordered_map<std::string, std::string> const &options) {
     send("uci");
     waitFor("uciok");
-    for (auto const &[name, value] : options) {
-        setOption(name, value);
-    }
+    for (auto const &[name, value] : options) setOption(name, value);
     send("isready");
     waitFor("readyok");
 }
@@ -148,9 +146,7 @@ std::string Engine::readLine() {
 }
 
 void Engine::waitFor(std::string const &token) {
-    for (;;) {
-        if (readLine() == token) return;
-    }
+    for (;;) if (readLine() == token) return;
 }
 
 void Engine::setOption(std::string const &name, std::string const &value) {
