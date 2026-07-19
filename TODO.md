@@ -57,3 +57,11 @@ so nothing gets silently lost.
   the call site. Once `meta.args` is read (see above), fall back to the schema's
   declared `default` for that key so `ctx.args:number("depth")` yields the
   declared default without repeating it in every accessor call.
+
+## Build
+
+- **Drop the CMake policy shim once upstream Lua bumps its minimum.** `CMakeLists.txt`
+  forces `CMAKE_POLICY_VERSION_MINIMUM` to 3.5 around the walterschell/Lua sub-build
+  because its CMakeLists predates CMake 3.5. Check whether a newer walterschell/Lua tag
+  raises its own `cmake_minimum_required`, and if so bump the `v5.4.5` pin and drop the
+  save/force/restore shim entirely.
