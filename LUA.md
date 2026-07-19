@@ -60,7 +60,7 @@ A plugin spec is a Lua file path, optionally followed by `key=value` arguments:
 ```
 
 Arguments are exposed to the plugin as `ctx.args` (see §5). Values are strings;
-typed accessors (`ctx.args:number`, `:bool`, …) coerce them.
+typed accessors (`ctx.args:number`, `:bool`, ...) coerce them.
 
 A bare key with no `=` is shorthand for `key=true`, so `--plugin "flag.lua
 verbose"` and `--plugin "flag.lua verbose=true"` parse identically. This gives
