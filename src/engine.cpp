@@ -13,6 +13,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <unordered_map>
+#include <utility>
 
 #include <fcntl.h>
 #include <sys/wait.h>
@@ -153,6 +154,73 @@ void Engine::setOption(std::string const &name, std::string const &value) {
     send("setoption name " + name + " value " + value);
 }
 
+namespace {
+
+std::string analyse_goCommand(AnalysisLimits const &limits) {
+    std::string go = "go";
+    if (limits.depth) go += std::format(" depth {}", *limits.depth);
+    if (limits.movetime) go += std::format(" movetime {}", *limits.movetime);
+    if (limits.nodes) go += std::format(" nodes {}", *limits.nodes);
+    return go;
+}
+
+// One parsed "info" line. `slot` is the 1-based multipv index it describes, and
+// `scored` records whether it carried a score at all -- depth/nodes/time/nps
+// are engine-wide rather than per-line, so they land in `overall` instead.
+struct InfoLine {
+    AnalysisLine line;
+    int slot = 1;
+    bool scored = false;
+};
+
+InfoLine analyse_parseInfo(std::istringstream &iss, Analysis &overall) {
+    InfoLine info;
+    std::string tok;
+    while (iss >> tok) {
+        if (tok == "depth") {
+            iss >> overall.depth;
+        } else if (tok == "nodes") {
+            iss >> overall.nodes;
+        } else if (tok == "time") {
+            iss >> overall.time;
+        } else if (tok == "nps") {
+            iss >> overall.nps;
+        } else if (tok == "multipv") {
+            iss >> info.slot;
+        } else if (tok == "score") {
+            std::string kind;
+            iss >> kind;
+            if (kind == "cp") {
+                int cp = 0;
+                iss >> cp;
+                info.line.score = static_cast<double>(cp);
+                info.scored = true;
+            } else if (kind == "mate") {
+                int m = 0;
+                iss >> m;
+                info.line.mate = m;
+                info.scored = true;
+            }
+        } else if (tok == "pv") {
+            std::string mv;
+            while (iss >> mv) info.line.pv.push_back(mv);
+        }
+    }
+    return info;
+}
+
+void analyse_collect(Analysis &result, std::vector<AnalysisLine> const &lines, int multipv) {
+    result.score = lines[0].score;
+    result.mate = lines[0].mate;
+    result.pv = lines[0].pv;
+    if (multipv <= 1) return;
+    for (auto const &line : lines) {
+        if (line.score || line.mate) result.lines.push_back(line);
+    }
+}
+
+} // namespace
+
 Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
     if (!limits.depth && !limits.movetime && !limits.nodes) {
         throw std::runtime_error("engine:analyse requires one of depth, movetime or nodes");
@@ -165,12 +233,7 @@ Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
     send("isready");
     waitFor("readyok");
     send("position fen " + fen);
-
-    std::string go = "go";
-    if (limits.depth) go += std::format(" depth {}", *limits.depth);
-    if (limits.movetime) go += std::format(" movetime {}", *limits.movetime);
-    if (limits.nodes) go += std::format(" nodes {}", *limits.nodes);
-    send(go);
+    send(analyse_goCommand(limits));
 
     Analysis result;
     // Indexed by the UCI multipv number minus one; a slot with neither score
@@ -178,8 +241,7 @@ Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
     std::vector<AnalysisLine> lines(static_cast<std::size_t>(limits.multipv));
 
     for (;;) {
-        std::string line = readLine();
-        std::istringstream iss(line);
+        std::istringstream iss(readLine());
         std::string tok;
         iss >> tok;
 
@@ -189,54 +251,14 @@ Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
         }
         if (tok != "info") continue;
 
-        AnalysisLine cur;
-        int multipv = 1;
-        bool has_score = false;
-        while (iss >> tok) {
-            if (tok == "depth") {
-                iss >> result.depth;
-            } else if (tok == "nodes") {
-                iss >> result.nodes;
-            } else if (tok == "time") {
-                iss >> result.time;
-            } else if (tok == "nps") {
-                iss >> result.nps;
-            } else if (tok == "multipv") {
-                iss >> multipv;
-            } else if (tok == "score") {
-                std::string kind;
-                iss >> kind;
-                if (kind == "cp") {
-                    int cp = 0;
-                    iss >> cp;
-                    cur.score = static_cast<double>(cp);
-                    has_score = true;
-                } else if (kind == "mate") {
-                    int m = 0;
-                    iss >> m;
-                    cur.mate = m;
-                    has_score = true;
-                }
-            } else if (tok == "pv") {
-                std::string mv;
-                while (iss >> mv) cur.pv.push_back(mv);
-            }
-        }
-
+        InfoLine info = analyse_parseInfo(iss, result);
         // Scoreless info lines (currmove/hashfull) carry no pv and would blank a good slot.
-        if (has_score && multipv >= 1 && multipv <= static_cast<int>(lines.size())) {
-            lines[static_cast<std::size_t>(multipv - 1)] = cur;
+        if (info.scored && info.slot >= 1 && info.slot <= static_cast<int>(lines.size())) {
+            lines[static_cast<std::size_t>(info.slot - 1)] = std::move(info.line);
         }
     }
 
-    result.score = lines[0].score;
-    result.mate = lines[0].mate;
-    result.pv = lines[0].pv;
-    if (limits.multipv > 1) {
-        for (auto const &line : lines) {
-            if (line.score || line.mate) result.lines.push_back(line);
-        }
-    }
+    analyse_collect(result, lines, limits.multipv);
     return result;
 }
 
