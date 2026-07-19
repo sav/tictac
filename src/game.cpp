@@ -172,7 +172,7 @@ private:
         std::string const *white = current_->findHeader("White");
         std::string const *black = current_->findHeader("Black");
         std::println(
-            stderr, "warning: skipping game {} ({} vs {}): cannot parse move '{}'", out_.size() + 1,
+            stderr, "warning: skipping game ({} vs {}): cannot parse move '{}'",
             white ? *white : "?", black ? *black : "?", move
         );
     }
