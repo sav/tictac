@@ -5,6 +5,9 @@
 
 #pragma once
 
+#include "engine.hpp"
+#include "game.hpp"
+
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -17,9 +20,6 @@
 #include <vector>
 
 #include <sol/sol.hpp>
-
-#include "engine.hpp"
-#include "game.hpp"
 
 namespace tictac {
 
