@@ -10,6 +10,7 @@
 #include <charconv>
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <format>
 #include <functional>
 #include <optional>
@@ -168,9 +169,25 @@ sol::object helper_scalarOrArrayChecked(
     return out;
 }
 
+// Opening the output truncates it, and that happens before run() reads any
+// input, so an --output that names an --file would destroy the database before
+// it is parsed. Refuse instead.
+void helper_rejectOutputOverInput(RunOptions const &opts) {
+    if (opts.noOutput || opts.output == "-") return;
+    std::error_code ec;
+    for (auto const &file : opts.files) {
+        if (file == "-") continue;
+        // equivalent() fails when the output does not exist yet, which is the
+        // common case and is not a collision.
+        if (std::filesystem::equivalent(file, opts.output, ec))
+            throw std::runtime_error("refusing to write output over input file: " + file);
+    }
+}
+
 } // namespace
 
 Runtime::Runtime(RunOptions opts) : opts_(std::move(opts)) {
+    helper_rejectOutputOverInput(opts_);
     // clang-format off
     lua_.open_libraries(
 		sol::lib::base,
