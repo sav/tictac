@@ -52,9 +52,21 @@ chess::Board Game::boardAt(int ply) const {
 }
 
 std::string Game::pgn() const {
+    // A tag value is a quoted string, so the two characters that would end it
+    // early have to be backslash-escaped for the game to round-trip.
+    auto const escape_tag = [](std::string_view v) {
+        std::string out;
+        out.reserve(v.size());
+        for (char const c : v) {
+            if (c == '"' || c == '\\') out += '\\';
+            out += c;
+        }
+        return out;
+    };
+
     std::string out;
     for (auto const &[k, v] : headers) {
-        out += "[" + k + " \"" + v + "\"]\n";
+        out += "[" + k + " \"" + escape_tag(v) + "\"]\n";
     }
     out += '\n';
 
