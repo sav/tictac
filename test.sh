@@ -4,6 +4,8 @@
 #
 # Build tictac and run the test suite with ctest.
 
+set -e
+
 if [ "$1" = "-c" ]; then
     shift
     rm -rf build

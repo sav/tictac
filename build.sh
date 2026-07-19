@@ -4,6 +4,8 @@
 #
 # Configure and build tictac under build/.
 
+set -e
+
 if [ "$1" = "-c" ]; then
     shift
     rm -rf build
