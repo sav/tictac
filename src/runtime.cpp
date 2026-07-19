@@ -97,6 +97,16 @@ AnalysisLimits helper_readLimits(sol::table const &table) {
     return lim;
 }
 
+// UCI sends option values as bare text, so a Lua string, number or boolean all
+// have to reach the engine spelled the way UCI expects. Integers in particular
+// must not go out as std::to_string's "16.000000".
+std::string helper_uciOptionValue(sol::object const &value) {
+    if (value.is<std::string>()) return value.as<std::string>();
+    if (value.is<bool>()) return value.as<bool>() ? "true" : "false";
+    double const d = value.as<double>();
+    return d == std::trunc(d) ? std::format("{}", static_cast<std::int64_t>(d)) : std::format("{}", d);
+}
+
 // All values stored for `key`, in the order they were passed (empty if none).
 std::vector<std::string const *>
 helper_findArgs(std::vector<std::pair<std::string, std::string>> const &values, std::string_view key) {
@@ -459,7 +469,7 @@ void registerTypes_Engine(sol::state_view lua) {
     lua.new_usertype<Engine>(
         "Engine", sol::no_constructor,
         "setOption", [](Engine &e, std::string const &name, sol::object value) {
-            e.setOption(name, value.as<std::string>());
+            e.setOption(name, helper_uciOptionValue(value));
         },
         "analyse", [](Engine &e, LuaBoard &b, sol::table limits, sol::this_state ts) {
             sol::state_view l(ts);
@@ -596,17 +606,7 @@ sol::table Runtime::buildCtx(PluginInstance &plugin) {
         std::unordered_map<std::string, std::string> options;
         if (opts) {
             for (auto &kv : *opts) {
-                std::string key = kv.first.as<std::string>();
-                sol::object value = kv.second;
-                if (value.is<std::string>()) options[key] = value.as<std::string>();
-                else if (value.is<bool>()) options[key] = value.as<bool>() ? "true" : "false";
-                else {
-                    // UCI spells integer options as plain integers; to_string(double)
-                    // would send "16.000000" for a Lua 16.
-                    double const d = value.as<double>();
-                    options[key] = d == std::trunc(d) ? std::format("{}", static_cast<std::int64_t>(d))
-                                                      : std::format("{}", d);
-                }
+                options[kv.first.as<std::string>()] = helper_uciOptionValue(kv.second);
             }
         }
         auto eng = std::make_shared<Engine>(path, options);
