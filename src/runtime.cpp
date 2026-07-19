@@ -501,7 +501,7 @@ void registerTypes_Args(sol::state_view lua) {
             return helper_scalarOrArrayChecked(ts, key, "number", found, [](std::string const &s) -> std::optional<double> {
                 double value = 0.0;
                 auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), value);
-                if (ec != std::errc{}) return std::nullopt;
+                if (ec != std::errc{} || ptr != s.data() + s.size()) return std::nullopt;
                 return value;
             });
         },
