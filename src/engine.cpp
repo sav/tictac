@@ -14,6 +14,7 @@
 #include <string_view>
 #include <unordered_map>
 
+#include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -69,6 +70,12 @@ Engine::Engine(std::string const &path, std::unordered_map<std::string, std::str
     ::close(out_pipe[1]);
     to_engine_ = in_pipe[1];
     from_engine_ = out_pipe[0];
+
+    // Without FD_CLOEXEC the next engine's child inherits these, so it holds a
+    // duplicate of this engine's stdin write end and closing to_engine_ in
+    // shutdown() no longer gives this child its EOF.
+    ::fcntl(to_engine_, F_SETFD, FD_CLOEXEC);
+    ::fcntl(from_engine_, F_SETFD, FD_CLOEXEC);
 
     // The destructor does not run for a constructor that throws, so the
     // handshake has to release the pipes and reap the child itself.
