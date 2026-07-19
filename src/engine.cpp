@@ -38,8 +38,8 @@ void ignoreSigPipeOnce() {
 Engine::Engine(std::string const &path, std::unordered_map<std::string, std::string> const &options) {
     ignoreSigPipeOnce();
 
-    std::array<int, 2> in_pipe;  // parent -> child stdin
-    std::array<int, 2> out_pipe; // child stdout -> parent
+    std::array<int, 2> in_pipe{};  // parent -> child stdin
+    std::array<int, 2> out_pipe{}; // child stdout -> parent
     if (::pipe(in_pipe.data()) != 0) {
         throw std::runtime_error("engine: failed to create pipes");
     }
