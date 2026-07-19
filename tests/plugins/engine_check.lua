@@ -77,7 +77,17 @@ function plugin.process(input, ctx)
   if mode == "options" then
     local log = ctx.args:get("log")
     assert(log ~= nil, "options mode requires log=")
-    ctx.engine("mock/uci_engine.sh", { Threads = 16, Hash = 32.0, Ponder = false, Style = "solid" })
+    local e = ctx.engine("mock/uci_engine.sh", { Threads = 16, Hash = 32.0, Ponder = false, Style = "solid" })
+    -- setOption takes the same value types as the constructor table, so the
+    -- two must spell a Lua number or boolean for UCI identically.
+    e:setOption("Skill Level", 10)
+    e:setOption("Chess960", true)
+    e:setOption("Contempt", 1.5)
+    e:setOption("Book", "on")
+    -- The constructor's options are already on disk by the time it returns (its
+    -- isready/readyok forces the engine to have consumed them), but a bare
+    -- setOption has no such round trip. Drive one so the log is complete.
+    e:bestmove(input.board, { depth = 1 })
     local seen = {}
     for entry in io.lines(log) do
       local k, v = entry:match("^(.-)=(.*)$")
@@ -87,6 +97,10 @@ function plugin.process(input, ctx)
     assert(seen.Hash == "32", "Hash sent as: " .. tostring(seen.Hash))
     assert(seen.Ponder == "false", "Ponder sent as: " .. tostring(seen.Ponder))
     assert(seen.Style == "solid", "Style sent as: " .. tostring(seen.Style))
+    assert(seen["Skill Level"] == "10", "Skill Level sent as: " .. tostring(seen["Skill Level"]))
+    assert(seen.Chess960 == "true", "Chess960 sent as: " .. tostring(seen.Chess960))
+    assert(seen.Contempt == "1.5", "Contempt sent as: " .. tostring(seen.Contempt))
+    assert(seen.Book == "on", "Book sent as: " .. tostring(seen.Book))
     return input
   end
 
