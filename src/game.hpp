@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -50,7 +51,12 @@ public:
     [[nodiscard]] std::shared_ptr<Game> clone() const;
 };
 
-// Parse every game in `stream` into the model.
-[[nodiscard]] std::vector<std::shared_ptr<Game>> parseGames(std::istream &stream);
+// Invoked with each game as soon as it is parsed. Returning false stops the
+// walk: no further game is handed over.
+using GameVisitor = std::function<bool(std::shared_ptr<Game> const &)>;
+
+// Parse `stream` one game at a time, handing each to `visit`. Only the game
+// being built is held in memory, so a database of any size streams through.
+void parseGames(std::istream &stream, GameVisitor const &visit);
 
 } // namespace tictac

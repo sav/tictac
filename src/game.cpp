@@ -64,19 +64,14 @@ chess::Board Game::boardAt(int ply) const {
     chess::Board board(startFen);
     std::size_t const limit =
         ply < 0 ? moves.size() : std::min<std::size_t>(static_cast<std::size_t>(ply), moves.size());
-    for (auto const &md : moves | std::views::take(limit)) {
-        board.makeMove(md.move);
-    }
+    for (auto const &md : moves | std::views::take(limit)) board.makeMove(md.move);
     return board;
 }
 
 std::string Game::pgn() const {
     std::string out;
-    for (auto const &[k, v] : headers) {
-        out += "[" + k + " \"" + detail::escapeTagValue(v) + "\"]\n";
-    }
+    for (auto const &[k, v] : headers) out += "[" + k + " \"" + detail::escapeTagValue(v) + "\"]\n";
     out += '\n';
-
     chess::Board board(startFen);
     std::string line;
     auto const flush_token = [&](std::string const &token) {
@@ -91,7 +86,6 @@ std::string Game::pgn() const {
             line += token;
         }
     };
-
     for (std::size_t i = 0; i < moves.size(); ++i) {
         auto const &md = moves[i];
         bool const white = board.sideToMove() == chess::Color::WHITE;
@@ -103,15 +97,10 @@ std::string Game::pgn() const {
             flush_token(std::to_string(board.fullMoveNumber()) + "...");
         }
         flush_token(md.san);
-        for (int nag : md.nags) {
-            flush_token("$" + std::to_string(nag));
-        }
-        if (!md.comment.empty()) {
-            flush_token("{" + md.comment + "}");
-        }
+        for (int nag : md.nags) flush_token("$" + std::to_string(nag));
+        if (!md.comment.empty()) flush_token("{" + md.comment + "}");
         board.makeMove(md.move);
     }
-
     flush_token(result());
     out += line;
     out += '\n';
@@ -122,9 +111,14 @@ std::shared_ptr<Game> Game::clone() const { return std::make_shared<Game>(*this)
 
 namespace {
 
+// Thrown out of the visitor to unwind the parser: chess::pgn::StreamParser has
+// no abort hook, and it owns only value members, so unwinding through it is the
+// one way to stop mid-file without reading the rest of the stream.
+struct StopParsing {};
+
 class Builder final : public chess::pgn::Visitor {
 public:
-    explicit Builder(std::vector<std::shared_ptr<Game>> &out) : out_(out) {}
+    explicit Builder(GameVisitor const &visit) : visit_(visit) {}
 
     void startPgn() override {
         current_ = std::make_shared<Game>();
@@ -169,7 +163,8 @@ public:
     void endPgn() override {
         if (bad_) return;
         if (!has_fen_) current_->startFen = std::string(chess::constants::STARTPOS);
-        out_.push_back(current_);
+        std::shared_ptr<Game> game = std::move(current_);
+        if (!visit_(game)) throw StopParsing{};
     }
 
 private:
@@ -179,12 +174,12 @@ private:
         std::optional<std::string_view> white = current_->findHeader("White");
         std::optional<std::string_view> black = current_->findHeader("Black");
         std::println(
-            stderr, "warning: skipping game ({} vs {}): cannot parse move '{}'",
-            white.value_or("?"), black.value_or("?"), move
+            stderr, "warning: skipping game ({} vs {}): cannot parse move '{}'", white.value_or("?"),
+            black.value_or("?"), move
         );
     }
 
-    std::vector<std::shared_ptr<Game>> &out_;
+    GameVisitor const &visit_;
     std::shared_ptr<Game> current_;
     chess::Board board_;
     bool has_fen_ = false;
@@ -193,16 +188,17 @@ private:
 
 } // namespace
 
-std::vector<std::shared_ptr<Game>> parseGames(std::istream &stream) {
-    std::vector<std::shared_ptr<Game>> games;
-    Builder builder(games);
+void parseGames(std::istream &stream, GameVisitor const &visit) {
+    Builder builder(visit);
     chess::pgn::StreamParser parser(stream);
-    // A malformed game warns rather than throws: everything parsed before the
-    // error is kept and the pipeline runs on that partial database.
-    if (auto err = parser.readGames(builder); err.hasError()) {
-        std::println(stderr, "warning: PGN parse error: {}", err.message());
+    try {
+        // A malformed game warns rather than throws: every game handed over
+        // before the error stands, and the pipeline keeps what it produced.
+        if (auto err = parser.readGames(builder); err.hasError())
+            std::println(stderr, "warning: PGN parse error: {}", err.message());
+    } catch (StopParsing const &) {
+        // The visitor asked to stop; the rest of the stream is left unread.
     }
-    return games;
 }
 
 } // namespace tictac

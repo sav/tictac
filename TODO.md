@@ -20,6 +20,13 @@ so nothing gets silently lost.
   pipeline, then read the next. Synchronize output so two or more threads never write
   simultaneously, which would corrupt the format.
 
+- **Early parser abort rides on an exception.** `parseGames` stops mid-file by throwing
+  `StopParsing` out of `Builder::endPgn` and catching it around `readGames`, because
+  `chess::pgn::StreamParser` exposes no way to be told to stop. The library already has
+  the plumbing next door -- `Visitor::skipPgn()`/`skip()` -- so a `stop()` honored by the
+  `readGames` loop is a small upstream patch. Send it, and once a release carries it,
+  bump the FetchContent pin and drop the sentinel exception for a plain flag check.
+
 - **Drop callback for plugin errors.** Under `--on-error pass`/`drop`, a failing
   `process()` only writes to stderr. Let the embedder supply a "drop callback" that is
   invoked with the error (plugin name, game index, message) so failures can be
