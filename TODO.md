@@ -14,12 +14,19 @@ so nothing gets silently lost.
   they arrive -- stream game-by-game rather than buffering many games and waiting for
   EOF.
 
+- **Replace the exception-based parser abort with an upstream `stop()`.** Stopping
+  mid-file currently unwinds a `StopParsing` exception out of `Builder::endPgn`, caught
+  around `readGames`, because `chess::pgn::StreamParser` exposes no abort hook. Contribute
+  a `stop()` upstream next to the existing `skipPgn()`/`skip()`, bump the FetchContent pin
+  to a release that carries it, and swap the exception for a flag check in the
+  `readGames` loop.
+
 - **Early parser abort rides on an exception.** `parseGames` stops mid-file by throwing
   `StopParsing` out of `Builder::endPgn` and catching it around `readGames`, because
-  `chess::pgn::StreamParser` offers no way to be told to stop. The library has the
-  plumbing next door -- `Visitor::skipPgn()`/`skip()` -- so a `stop()` honored by the
-  `readGames` loop is a small upstream patch. Send it; once a release carries it, bump
-  the FetchContent pin and drop the sentinel exception for a plain flag check.
+  `chess::pgn::StreamParser` exposes no way to be told to stop. The library already has
+  the plumbing next door -- `Visitor::skipPgn()`/`skip()` -- so a `stop()` honored by the
+  `readGames` loop is a small upstream patch. Send it, and once a release carries it,
+  bump the FetchContent pin and drop the sentinel exception for a plain flag check.
 
 - **Drop callback for plugin errors.** Under `--on-error pass`/`drop`, a failing
   `process()` only writes to stderr. Let the embedder supply a "drop callback" that is
