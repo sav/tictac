@@ -232,15 +232,14 @@ int Runtime::run() {
             std::println(stderr, "error: cannot open file: {}", file);
             return 1;
         }
-        auto games = parseGames(in);
-        for (auto &game : games) {
+        // Games stream through the pipeline one at a time: the parser hands over
+        // each game as it completes, so a database never sits in memory whole.
+        parseGames(in, [&](std::shared_ptr<Game> const &game) {
             ++index;
             current_index_ = index;
-            if (processGame(game, index)) {
-                aborted = true;
-                break;
-            }
-        }
+            if (processGame(game, index)) aborted = true;
+            return !aborted;
+        });
     }
     // Call finish() in pipeline order. Unlike init(), a failure is only reported:
     // the games are already emitted, and one bad plugin must not skip the rest.
@@ -629,9 +628,7 @@ sol::table Runtime::buildCtx(PluginInstance &plugin) {
         if (it != self->engines.end()) return it->second;
         std::unordered_map<std::string, std::string> options;
         if (opts) {
-            for (auto &kv : *opts) {
-                options[kv.first.as<std::string>()] = detail::uciOptionValue(kv.second);
-            }
+            for (auto &kv : *opts) options[kv.first.as<std::string>()] = detail::uciOptionValue(kv.second);
         }
         auto eng = std::make_shared<Engine>(path, options);
         self->engines[path] = eng;
@@ -921,11 +918,8 @@ PluginSpec parsePluginSpec(std::string const &spec) {
         // Whitespace tokenization means a value cannot contain a space. A bare
         // token becomes "true", and a repeated key is kept, not overwritten.
         auto eq = tok.find('=');
-        if (eq == std::string::npos) {
-            plugin.args.emplace_back(tok, "true");
-        } else {
-            plugin.args.emplace_back(tok.substr(0, eq), tok.substr(eq + 1));
-        }
+        if (eq == std::string::npos) plugin.args.emplace_back(tok, "true");
+        else plugin.args.emplace_back(tok.substr(0, eq), tok.substr(eq + 1));
     }
     if (plugin.path.empty()) throw std::runtime_error("empty plugin spec");
     return plugin;
