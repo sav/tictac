@@ -35,6 +35,7 @@ public:
 
     // The view is invalidated by any later setHeader/removeHeader call.
     [[nodiscard]] std::optional<std::string_view> findHeader(std::string const &key) const;
+    // Overwrites the value in place if `key` already exists; appends otherwise.
     void setHeader(std::string const &key, std::string const &value);
     bool removeHeader(std::string const &key);
 
