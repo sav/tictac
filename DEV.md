@@ -105,6 +105,12 @@ over heap, and the Core Guidelines [0].
   single trailing `return`. Dispatch on a value's type or an action code the same way:
   one guard per branch, returning its own result. It keeps each case self-contained and
   the happy path un-nested.
+- **Omit the braces on a single-statement branch.** When the body of an `if`
+  (or `else`) is one simple statement, write it braceless: `if (cond) foo;`,
+  splitting to a second line when it doesn't fit -- not `if (cond) { foo; }`.
+  Keep the braces when they earn their keep: the body is itself a control-flow
+  statement (`if`/`for`/`while`), it carries a multi-line comment, or another
+  branch of the same chain needs braces (don't mix braced and braceless siblings).
 - **`goto` is allowed. Do not avoid it on principle, and do not rewrite a working
   `goto` just because it is a `goto`.** It is sometimes the clearest way to express
   the flow: a shared cleanup or error path several branches jump to, breaking out of
