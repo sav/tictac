@@ -6,8 +6,11 @@
 #include "engine.hpp"
 
 #include <array>
+#include <cerrno>
 #include <csignal>
 #include <cstddef>
+#include <cstdio>
+#include <cstring>
 #include <format>
 #include <sstream>
 #include <stdexcept>
@@ -38,7 +41,6 @@ void ignoreSigPipeOnce() {
 
 Engine::Engine(std::string const &path, std::unordered_map<std::string, std::string> const &options) {
     ignoreSigPipeOnce();
-
     std::array<int, 2> in_pipe{};  // parent -> child stdin
     std::array<int, 2> out_pipe{}; // child stdout -> parent
     // O_CLOEXEC so a later engine's child does not inherit these fds; otherwise it
@@ -51,7 +53,6 @@ Engine::Engine(std::string const &path, std::unordered_map<std::string, std::str
         ::close(in_pipe[1]);
         throw std::runtime_error("engine: failed to create pipes");
     }
-
     pid_ = ::fork();
     if (pid_ < 0) {
         ::close(in_pipe[0]);
@@ -60,7 +61,6 @@ Engine::Engine(std::string const &path, std::unordered_map<std::string, std::str
         ::close(out_pipe[1]);
         throw std::runtime_error("engine: fork failed");
     }
-
     if (pid_ == 0) {
         // Child: wire pipes to stdin/stdout and exec the engine.
         ::dup2(in_pipe[0], STDIN_FILENO);
@@ -70,14 +70,16 @@ Engine::Engine(std::string const &path, std::unordered_map<std::string, std::str
         ::close(out_pipe[0]);
         ::close(out_pipe[1]);
         ::execlp(path.c_str(), path.c_str(), static_cast<char *>(nullptr));
+        // Only reached when exec fails; report why before the parent sees EOF.
+        // No throw: unwinding would run the parent's handlers, destructors and
+        // atexit hooks in the child too, so print and _exit instead.
+        std::fprintf(stderr, "engine: exec %s: %s\n", path.c_str(), std::strerror(errno));
         ::_exit(127);
     }
-
     ::close(in_pipe[0]);
     ::close(out_pipe[1]);
     to_engine_ = in_pipe[1];
     from_engine_ = out_pipe[0];
-
     // The destructor does not run for a constructor that throws, so the
     // handshake has to release the pipes and reap the child itself.
     try {
@@ -90,12 +92,16 @@ Engine::Engine(std::string const &path, std::unordered_map<std::string, std::str
 
 Engine::~Engine() { shutdown(); }
 
+void Engine::syncReady() {
+    send("isready");
+    waitFor("readyok");
+}
+
 void Engine::handshake(std::unordered_map<std::string, std::string> const &options) {
     send("uci");
     waitFor("uciok");
     for (auto const &[name, value] : options) setOption(name, value);
-    send("isready");
-    waitFor("readyok");
+    syncReady();
 }
 
 void Engine::shutdown() noexcept {
@@ -228,13 +234,11 @@ void collect(Analysis &result, std::vector<AnalysisLine> const &lines, int multi
 
 Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
     if (!limits.depth && !limits.movetime && !limits.nodes)
-        throw std::runtime_error("engine:analyse requires one of depth, movetime or nodes");
+        throw std::runtime_error("engine: analyse requires one of depth, movetime or nodes");
     if (limits.multipv < 1 || limits.multipv > kMaxLines)
         throw std::runtime_error(std::format("engine: multipv must be between 1 and {}", kMaxLines));
-
     setOption("MultiPV", std::to_string(limits.multipv));
-    send("isready");
-    waitFor("readyok");
+    syncReady();
     send("position fen " + fen);
     send(detail::goCommand(limits));
 
@@ -242,24 +246,20 @@ Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
     // Indexed by the UCI multipv number minus one; a slot with neither score
     // nor mate is one the engine never reported.
     std::vector<AnalysisLine> lines(static_cast<std::size_t>(limits.multipv));
-
     for (;;) {
         std::istringstream iss(readLine());
         std::string tok;
         iss >> tok;
-
         if (tok == "bestmove") {
             iss >> result.bestmove;
             break;
         }
         if (tok != "info") continue;
-
         InfoLine info = detail::parseInfo(iss, result);
         // Scoreless info lines (currmove/hashfull) carry no pv and would blank a good slot.
         if (info.scored && info.slot >= 1 && info.slot <= static_cast<int>(lines.size()))
             lines[static_cast<std::size_t>(info.slot - 1)] = std::move(info.line);
     }
-
     detail::collect(result, lines, limits.multipv);
     return result;
 }
