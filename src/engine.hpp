@@ -41,7 +41,7 @@ struct AnalysisLimits {
 };
 
 // A UCI engine subprocess. Spawned on construction, terminated on destruction.
-class Engine {
+class Engine final {
 public:
     Engine(std::string const &path, std::unordered_map<std::string, std::string> const &options);
     ~Engine();
