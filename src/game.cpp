@@ -10,6 +10,7 @@
 #include <format>
 #include <print>
 #include <ranges>
+#include <utility>
 
 namespace tictac {
 
@@ -136,7 +137,7 @@ public:
         // lets move() parse SAN against the position it was played in.
         if (key == "FEN") {
             current_->startFen = std::string(value);
-            if (!board_.setFen(value)) return failGame(std::format("invalid FEN '{}'", value));
+            if (!board_.setFen(value)) return failGame("invalid FEN '{}'", value);
             has_fen_ = true;
         }
         current_->setHeader(std::string(key), std::string(value));
@@ -152,9 +153,9 @@ public:
         try {
             mv = chess::uci::parseSan(board_, move);
         } catch (chess::uci::SanParseError const &) {
-            return failGame(std::format("cannot parse SAN move '{}'", move));
+            return failGame("cannot parse SAN move '{}'", move);
         } catch (chess::uci::AmbiguousMoveError const &) {
-            return failGame(std::format("ambiguous move '{}'", move));
+            return failGame("ambiguous move '{}'", move);
         }
         MoveData md;
         md.move = mv;
@@ -172,14 +173,15 @@ public:
     }
 
 private:
-    void failGame(std::string_view reason) {
+    template <typename... Args>
+    void failGame(std::format_string<Args...> fmt, Args &&...args) {
         bad_ = true;
         skipPgn(true);
         std::optional<std::string_view> white = current_->findHeader("White");
         std::optional<std::string_view> black = current_->findHeader("Black");
         std::println(
             stderr, "warning: skipping game ({} vs {}): {}", white.value_or("?"), black.value_or("?"),
-            reason
+            std::format(fmt, std::forward<Args>(args)...)
         );
     }
 
