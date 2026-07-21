@@ -91,12 +91,25 @@ sol::table analysisToTable(sol::state_view lua, Analysis const &a) {
     return table;
 }
 
+// A Lua number always reaches C++ as a double -- ctx.args:number() yields one,
+// and even an integer literal converts -- so read the integer limits as doubles
+// and accept any whole value, rejecting a fractional one rather than letting
+// sol2 refuse the float outright.
+template <typename Int>
+Int readIntLimit(sol::table const &table, char const *key) {
+    sol::optional<double> const value = table.get<sol::optional<double>>(key);
+    if (!value) throw std::runtime_error(std::format("engine: '{}' must be a number", key));
+    if (*value != std::trunc(*value))
+        throw std::runtime_error(std::format("engine: '{}' must be a whole number", key));
+    return static_cast<Int>(*value);
+}
+
 AnalysisLimits readLimits(sol::table const &table) {
     AnalysisLimits lim;
-    if (table["depth"].valid()) lim.depth = table.get<int>("depth");
-    if (table["movetime"].valid()) lim.movetime = table.get<int>("movetime");
-    if (table["nodes"].valid()) lim.nodes = table.get<std::int64_t>("nodes");
-    if (table["multipv"].valid()) lim.multipv = table.get<int>("multipv");
+    if (table["depth"].valid()) lim.depth = readIntLimit<int>(table, "depth");
+    if (table["movetime"].valid()) lim.movetime = readIntLimit<int>(table, "movetime");
+    if (table["nodes"].valid()) lim.nodes = readIntLimit<std::int64_t>(table, "nodes");
+    if (table["multipv"].valid()) lim.multipv = readIntLimit<int>(table, "multipv");
     return lim;
 }
 
