@@ -41,8 +41,12 @@ Engine::Engine(std::string const &path, std::unordered_map<std::string, std::str
 
     std::array<int, 2> in_pipe{};  // parent -> child stdin
     std::array<int, 2> out_pipe{}; // child stdout -> parent
-    if (::pipe(in_pipe.data()) != 0) throw std::runtime_error("engine: failed to create pipes");
-    if (::pipe(out_pipe.data()) != 0) {
+    // O_CLOEXEC so a later engine's child does not inherit these fds; otherwise it
+    // would hold a duplicate of this engine's stdin write end, and closing
+    // to_engine_ in shutdown() would no longer give this child its EOF. The
+    // child's own stdin/stdout survive exec because dup2 clears close-on-exec.
+    if (::pipe2(in_pipe.data(), O_CLOEXEC) != 0) throw std::runtime_error("engine: failed to create pipes");
+    if (::pipe2(out_pipe.data(), O_CLOEXEC) != 0) {
         ::close(in_pipe[0]);
         ::close(in_pipe[1]);
         throw std::runtime_error("engine: failed to create pipes");
@@ -73,12 +77,6 @@ Engine::Engine(std::string const &path, std::unordered_map<std::string, std::str
     ::close(out_pipe[1]);
     to_engine_ = in_pipe[1];
     from_engine_ = out_pipe[0];
-
-    // Without FD_CLOEXEC the next engine's child inherits these, so it holds a
-    // duplicate of this engine's stdin write end and closing to_engine_ in
-    // shutdown() no longer gives this child its EOF.
-    ::fcntl(to_engine_, F_SETFD, FD_CLOEXEC);
-    ::fcntl(from_engine_, F_SETFD, FD_CLOEXEC);
 
     // The destructor does not run for a constructor that throws, so the
     // handshake has to release the pipes and reap the child itself.
