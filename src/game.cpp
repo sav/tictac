@@ -118,9 +118,11 @@ namespace {
 // one way to stop mid-file without reading the rest of the stream.
 struct StopParsing {};
 
-// StreamParser drives these callbacks once per game, in order: startPgn, then
-// header for each tag, then startMoves, then move for each move, then endPgn.
-// Builder accumulates a Game across them and hands it to the visitor in endPgn.
+// StreamParser drives these callbacks once per game -- despite the name, "Pgn"
+// in startPgn/endPgn is one game record, not the whole database. Order per game:
+// startPgn, then header for each tag, then startMoves, then move for each move,
+// then endPgn. Builder accumulates a Game across them and hands it to the visitor
+// in endPgn.
 class Builder final : public chess::pgn::Visitor {
 public:
     explicit Builder(GameVisitor const &visit) : visit_(visit) {}
