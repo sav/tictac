@@ -154,7 +154,7 @@ public:
         } catch (chess::uci::SanParseError const &) {
             return failGame(std::format("cannot parse SAN move '{}'", move));
         } catch (chess::uci::AmbiguousMoveError const &) {
-            return failGame(std::format("cannot parse move '{}'", move));
+            return failGame(std::format("ambiguous move '{}'", move));
         }
         MoveData md;
         md.move = mv;
