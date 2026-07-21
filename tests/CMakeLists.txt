@@ -138,7 +138,7 @@ tt_case(pgn_bad_header_no_games  -f fixtures/bad_header.pgn       -p "plugins/ga
 
 # The warning has to name the offending move and the players, or a skipped game
 # is invisible in a large run.
-tt_error(pgn_bad_move_warns    "skipping game \\(Carol vs Dave\\): cannot parse move 'Qz9'" -f fixtures/bad_move.pgn       -p "plugins/games_are.lua expect=Alice,Erin" --no-output)
+tt_error(pgn_bad_move_warns    "skipping game \\(Carol vs Dave\\): cannot parse SAN move 'Qz9'" -f fixtures/bad_move.pgn       -p "plugins/games_are.lua expect=Alice,Erin" --no-output)
 tt_error(pgn_ambiguous_warns   "cannot parse move 'Ne4'"                                      -f fixtures/ambiguous_move.pgn -p "plugins/games_are.lua expect=Erin"       --no-output)
 tt_error(pgn_parse_error_warns "PGN parse error: Invalid header"                              -f fixtures/bad_header.pgn     -p "plugins/games_are.lua expect="           --no-output)
 
