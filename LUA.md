@@ -20,10 +20,9 @@ tictac --file database.pgn --plugin foo.lua --plugin bar.lua
   pass data to the next plugin in the chain.
 
 A single, uniform value -- the **pipeline value** `{ game, board, data }` --
-travels through the chain. A plugin receives the previous plugin's output and
-returns the input to the next plugin. This symmetry is the core of the design
-and directly satisfies the requirement of carrying *the game*, *the current
-board*, and a *user argument* between stages.
+travels through the chain: a plugin receives the previous plugin's output and
+returns the next plugin's input. This symmetry is the core of the design,
+carrying *the game*, *the current board*, and a *user argument* between stages.
 
 ```mermaid
 flowchart LR
@@ -47,7 +46,7 @@ tictac --file <db.pgn> [--plugin <spec>]... [--output <file>] [--jobs N] [--on-e
 | `--output`, `-o` | Where surviving games are written (default: stdout, PGN). `-` = stdout, omit with `--no-output`. |
 | `--no-output` | Discard the default game stream (useful for pure reporters). |
 | `--on-error` | `abort` \| `drop` \| `pass` (default `abort`) -- how a plugin's failing `process()` is handled: `abort` halts the run, `drop` drops the game, `pass` passes it through unchanged; all three log the error. A failing `init` always aborts. |
-| `--jobs`, `-j` | Reserved: parallel game workers. Plugins must be written to tolerate it (see §9). |
+| `--jobs`, `-j` | Reserved: parallel game workers (not yet implemented). Plugins must be written to tolerate concurrent games. |
 
 ### Plugin spec & arguments
 
@@ -301,10 +300,9 @@ end
 
 ### Cheatsheet
 
-A quick-reference cheatsheet of every type. The subsections that follow give the
-**formal definition** of each function -- its arguments, the exact values it can
-return, and a short example; consult them whenever the one-line summary here is
-not enough.
+A quick reference for every type. The subsections that follow give each
+function's **formal definition** -- its arguments, exact return values, and a
+short example -- for when the one-line summary here is not enough.
 
 #### Game
 
@@ -829,155 +827,35 @@ ctx.out:writeGame(game)              -- emit to the default output mid-pipeline
 
 ---
 
-## 7. Plugin archetypes (worked examples)
+## 7. Plugin archetypes
 
-These show that the interface covers the intended plugin families. They are
-illustrative, not normative.
+The interface is meant to cover the common plugin families, and the examples
+below ship as runnable plugins under `plugins/`. Each is exercised by the test
+suite, so it stays working as the runtime moves. Invoke one with
+`--plugin "<file> <args>"`, and read the file for the full source.
 
-### Header filter (with regexp)
+| Plugin | What it does | Example spec |
+|--------|--------------|--------------|
+| `filter.lua` | Keep games whose headers match: `white`/`black`/`player` patterns and `min_elo`. | `filter.lua player=^Carlsen min_elo=2700` |
+| `position.lua` | Forward the first position whose FEN starts with a prefix, as the board cursor. | `position.lua fen=rnbqkbnr` |
+| `dedup.lua` | Drop games already seen this run, keyed by serialized PGN. | `dedup.lua` |
+| `split.lua` | Write each game to its own file, grouped by a header value. | `split.lua by=ECO dir=out/` |
+| `csv.lua` | Export one row per game: white, black, result, eco. | `csv.lua out=games.csv` |
+| `histogram.lua` | Tally games per header value; emit a sorted table in `finish`. | `histogram.lua by=ECO` |
+| `blunder.lua` | Tag moves whose eval swings by at least `drop` centipawns. Needs an engine. | `blunder.lua engine=stockfish depth=16 drop=200` |
+| `puzzle.lua` + `collect.lua` | Find a forced mate, hand the position downstream, then emit it. Needs an engine. | `puzzle.lua mate=3` then `collect.lua out=puzzles.epd` |
 
-```lua
--- filter.lua  →  --plugin "filter.lua white=^Carlsen min_elo=2700"
-local plugin = { meta = { name = "filter" } }
-
-function plugin.process(input, ctx)
-  local g = input.game
-  local white_re = ctx.args:get("white")
-  if white_re and not g:header("White"):match(white_re) then
-    return false                                   -- drop
-  end
-  local min = ctx.args:number("min_elo", 0)
-  if tonumber(g:header("WhiteElo") or "0") < min then
-    return false
-  end
-  return input                                     -- pass
-end
-
-return plugin
-```
-
-### Position filter
+The `puzzle` -> `collect` pair is the cross-plugin handoff the pipeline value
+exists for: one plugin selects a position and attaches data, the next reads it.
 
 ```lua
-function plugin.process(input, ctx)
-  local target = ctx.args:require("fen")           -- match a structure
-  for node in input.game:positions() do
-    if node.board:fen():match("^" .. target) then
-      return { game = input.game, board = node.board } -- forward the match position
-    end
-  end
-  return false
-end
-```
-
-### ECO tagger
-
-```lua
-function plugin.process(input, ctx)
-  local eco = ctx.shared.eco_book:lookup(input.game)  -- shared lookup table
-  input.game:setHeader("ECO", eco.code)
-  input.game:setHeader("Opening", eco.name)
-  return input
-end
-```
-
-### Blunder tagger (uses an engine)
-
-```lua
-function plugin.init(ctx)
-  ctx.scope.sf = ctx.engine(ctx.args:get("engine", "stockfish"))
-end
-
-function plugin.process(input, ctx)
-  local prev
-  for node in input.game:positions() do
-    local cp = ctx.scope.sf:cp(node.board, { depth = 16 })   -- white-relative
-    if prev and math.abs(cp - prev) >= 200 then
-      node.move:setComment(string.format("blunder (%.2f)", cp / 100))
-      node.move:addNag(4)                                     -- $4 = "??"
-    end
-    prev = cp
-  end
-  return input
-end
-```
-
-### Deduplication
-
-```lua
-function plugin.init(ctx)
-  ctx.scope.seen = {}
-end
-
-function plugin.process(input, ctx)
-  local key = input.game:pgn()                  -- or a normalized move-hash
-  if ctx.scope.seen[key] then return false end  -- drop duplicate
-  ctx.scope.seen[key] = true
-  return input
-end
-```
-
-### Game splitter (one DB → many files)
-
-```lua
-function plugin.init(ctx)  ctx.scope.writers = {} end
-
-function plugin.process(input, ctx)
-  local key = input.game:header("ECO") or "NA"
-  local dir = ctx.args:get("dir", "out/")
-  local w = ctx.scope.writers[key]                         -- cache per path yourself:
-  if not w then                                            -- reopening would truncate
-    w = ctx.open(dir .. key .. ".pgn")
-    ctx.scope.writers[key] = w
-  end
-  w:writeGame(input.game)
-  return input
-end
-```
-
-### CSV exporter
-
-```lua
-function plugin.init(ctx)
-  ctx.scope.w = ctx.open(ctx.args:get("out", "games.csv"))
-  ctx.scope.w:write("white,black,result,eco\n")
-end
-
-function plugin.process(input, ctx)
-  local g = input.game
-  ctx.scope.w:writef("%s,%s,%s,%s\n",
-    g:header("White"), g:header("Black"), g:result(), g:header("ECO") or "")
-  return input
-end
-```
-
-### ECO histogram / player report (aggregate, emit in `finish`)
-
-```lua
-function plugin.init(ctx)  ctx.scope.count = {} end
-
-function plugin.process(input, ctx)
-  local eco = input.game:header("ECO") or "?"
-  ctx.scope.count[eco] = (ctx.scope.count[eco] or 0) + 1
-  return input                                  -- pass games through untouched
-end
-
-function plugin.finish(ctx)
-  local w = ctx.open("eco_histogram.txt")
-  for eco, n in pairs(ctx.scope.count) do w:writef("%s\t%d\n", eco, n) end
-end
-```
-
-### Puzzle finder → collector (cross-plugin handoff)
-
-```lua
--- puzzle.lua: find a tactical shot, hand the position downstream via board+data
+-- puzzle.lua: find a forced mate, hand the position downstream
 function plugin.process(input, ctx)
   for node in input.game:positions() do
-    local r = ctx.scope.sf:analyse(node.board, { depth = 20, multipv = 2 })
-    if r.mate and r.mate <= 3 then
+    local r = ctx.scope.sf:analyse(node.board, { depth = 20 })
+    if r.mate and r.mate > 0 and r.mate <= 3 then
       return { game = input.game, board = node.board,
-               data = { puzzle = true, mate = r.mate, pv = r.pv } }
+               data = { puzzle = true, mate = r.mate } }
     end
   end
   return false
@@ -992,25 +870,53 @@ function plugin.process(input, ctx)
 end
 ```
 
-### Endgame classifier
+### Illustrative sketches
+
+These show further possibilities the interface allows but do not ship as
+plugins: each leans on data or a helper tictac does not provide (an opening
+book, a position classifier, a shared tree), so read them as pseudocode rather
+than runnable files.
+
+#### ECO tagger
+
+Look each game up in an opening book and stamp the ECO/Opening headers.
+`ctx.shared.eco_book` is whatever lookup table the host or an earlier plugin
+loaded.
+
+```lua
+function plugin.process(input, ctx)
+  local eco = ctx.shared.eco_book:lookup(input.game)
+  input.game:setHeader("ECO", eco.code)
+  input.game:setHeader("Opening", eco.name)
+  return input
+end
+```
+
+#### Endgame classifier
+
+Bucket the final position by its material signature ("R+P vs R"). `classify` is
+the plugin's own routine over `board:pieces()`.
 
 ```lua
 function plugin.process(input, ctx)
   local b = input.game:board()                 -- final position
   if b:phase() == "endgame" then
-    input.game:setHeader("Endgame", classify(b:pieces()))  -- e.g. "R+P vs R"
+    input.game:setHeader("Endgame", classify(b:pieces()))
   end
   return input
 end
 ```
 
-### Opening tree (aggregate)
+#### Opening tree (aggregate)
+
+Fold every game's first moves into a shared trie, then serialize it in `finish`.
+`ctx.shared.tree` is a node structure the plugin maintains itself.
 
 ```lua
 function plugin.process(input, ctx)
-  local node = ctx.shared.tree                  -- shared trie of positions
-  for _, mv in ipairs(input.game:moves()) do
-    if ctx.index_ply and ctx.index_ply > 12 then break end
+  local node = ctx.shared.tree
+  for i, mv in ipairs(input.game:moves()) do
+    if i > 12 then break end
     node = node:child(mv:san())
     node.games = node.games + 1
   end
@@ -1048,31 +954,3 @@ end
   `action` inside a fan-out element).
 - `ctx.args:require` and `analyse` with no limit raise descriptive errors.
 
----
-
-## 9. Open questions / decisions for review
-
-These are the points I'd like you to confirm before implementation:
-
-1. **Pipeline value shape.** Is the symmetric `{ game, board, data }` in/out the
-   model you want, or would you prefer `process(game, ctx)` with the carried
-   payload living only in `ctx`? (I recommend the symmetric value -- it makes the
-   cross-plugin handoff explicit and matches your stated requirement.)
-2. **`board` cursor semantics.** Default the first plugin's `board` to the
-   **final** position (proposed) or the **initial** position? Most analyzers
-   iterate `game:positions()` anyway and use the cursor only for handoff.
-3. **Plugin argument syntax.** `--plugin "file.lua key=val key2=val2"`
-   (proposed) vs. a separate flag (`--plugin file.lua --arg file:key=val`) vs.
-   per-plugin Lua config files.
-4. **Default output.** Should surviving games go to stdout by default, or should
-   output be silent unless `--output` is given?
-5. **Fan-out.** Keep the "return an array of results" fan-out, or restrict
-   multi-game production to explicit `ctx.out:writeGame` calls?
-6. **Concurrency (`--jobs`).** If we ever parallelize game workers, `ctx.shared`
-   needs a defined concurrency model (per-worker shards merged in `finish`, or a
-   lock). Worth deciding now so the interface doesn't change later.
-7. **Score sign convention.** `analyse().score` is **side-to-move relative**
-   (UCI native); the `:cp()` shorthand is **white-relative**. Confirm this split
-   is intuitive.
-8. **Variations.** v1 is mainline-only. Confirm that's acceptable for the first
-   cut.
