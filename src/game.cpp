@@ -145,8 +145,8 @@ public:
 
     void startMoves() override {}
 
-    // An unparseable move leaves the board position unknown, so the rest of the
-    // game cannot be replayed: warn, abandon this game, and keep the database.
+    // An unparseable move leaves the position unknown, so this game can't be
+    // replayed: warn and abandon it, but keep parsing the rest of the database.
     void move(std::string_view move, std::string_view comment) override {
         if (bad_) return;
         chess::Move mv;
