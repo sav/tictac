@@ -58,6 +58,7 @@ private:
     void send(std::string const &line);
     std::string readLine();
     void waitFor(std::string const &token);
+    void syncReady();
     void handshake(std::unordered_map<std::string, std::string> const &options);
     void shutdown() noexcept;
 
