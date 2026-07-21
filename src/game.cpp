@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <format>
 #include <print>
 #include <ranges>
 
@@ -135,7 +136,7 @@ public:
         // lets move() parse SAN against the position it was played in.
         if (key == "FEN") {
             current_->startFen = std::string(value);
-            board_.setFen(value);
+            if (!board_.setFen(value)) return failGame(std::format("invalid FEN '{}'", value));
             has_fen_ = true;
         }
         current_->setHeader(std::string(key), std::string(value));
@@ -151,9 +152,9 @@ public:
         try {
             mv = chess::uci::parseSan(board_, move);
         } catch (chess::uci::SanParseError const &) {
-            return failGame(move);
+            return failGame(std::format("cannot parse move '{}'", move));
         } catch (chess::uci::AmbiguousMoveError const &) {
-            return failGame(move);
+            return failGame(std::format("cannot parse move '{}'", move));
         }
         MoveData md;
         md.move = mv;
@@ -171,14 +172,14 @@ public:
     }
 
 private:
-    void failGame(std::string_view move) {
+    void failGame(std::string_view reason) {
         bad_ = true;
         skipPgn(true);
         std::optional<std::string_view> white = current_->findHeader("White");
         std::optional<std::string_view> black = current_->findHeader("Black");
         std::println(
-            stderr, "warning: skipping game ({} vs {}): cannot parse move '{}'", white.value_or("?"),
-            black.value_or("?"), move
+            stderr, "warning: skipping game ({} vs {}): {}", white.value_or("?"), black.value_or("?"),
+            reason
         );
     }
 
