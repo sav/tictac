@@ -152,7 +152,7 @@ public:
         try {
             mv = chess::uci::parseSan(board_, move);
         } catch (chess::uci::SanParseError const &) {
-            return failGame(std::format("cannot parse move '{}'", move));
+            return failGame(std::format("cannot parse SAN move '{}'", move));
         } catch (chess::uci::AmbiguousMoveError const &) {
             return failGame(std::format("cannot parse move '{}'", move));
         }
