@@ -195,3 +195,55 @@ tt_engine(engine_no_leak_on_failure mode=leak times=50)
 tt_engine_error(engine_no_limits    "requires one of depth, movetime or nodes" mode=no_limits)
 tt_engine_error(engine_multipv_zero "multipv must be between 1 and 64"         mode=multipv_zero)
 tt_engine_error(engine_multipv_huge "multipv must be between 1 and 64"         mode=multipv_huge)
+
+# --- Example plugins ------------------------------------------------------------
+# The worked examples in LUA.md ship as real plugins under plugins/ (one level
+# up). Drive each over a fixture so they cannot silently rot: a change that
+# breaks one fails here. The engine examples run against the mock under mock/ so
+# their results are fixed.
+
+set(PLUGINS ${CMAKE_CURRENT_SOURCE_DIR}/../plugins)
+
+# Stream-shaping examples, checked by a downstream assertion plugin.
+tt_case(ex_filter   -f fixtures/three_games.pgn -p "${PLUGINS}/filter.lua white=^Carol" -p "plugins/games_are.lua expect=Carol" --no-output)
+tt_case(ex_position -f fixtures/three_games.pgn -p "${PLUGINS}/position.lua fen=rnbqkbnr" -p "plugins/count.lua expect=3" --no-output)
+tt_case(ex_dedup    -f fixtures/dup_games.pgn   -p "${PLUGINS}/dedup.lua"                 -p "plugins/count.lua expect=2" --no-output)
+
+# position.lua requires its fen= argument.
+tt_error(ex_position_requires_fen "missing required argument: fen" -f fixtures/three_games.pgn -p "${PLUGINS}/position.lua" --no-output)
+
+# File-producing examples: compare the produced file byte for byte. PLUGIN is one
+# argument carrying a spec with spaces, so its path is absolute.
+function(tt_produces name fixture plugin produced expected)
+  add_test(NAME ${name}
+    COMMAND ${CMAKE_COMMAND}
+      -DTICTAC=$<TARGET_FILE:tictac>
+      -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/${fixture}
+      -DPLUGIN=${plugin}
+      -DPRODUCED=${produced}
+      -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/expected/${expected}
+      -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/${name}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/produces.cmake)
+endfunction()
+
+tt_produces(ex_csv       three_games.pgn "${PLUGINS}/csv.lua out=ex_csv.csv"                        ex_csv.csv       ex_csv.csv)
+tt_produces(ex_histogram three_games.pgn "${PLUGINS}/histogram.lua by=Result out=ex_histogram.txt" ex_histogram.txt ex_histogram.txt)
+tt_produces(ex_split     three_games.pgn "${PLUGINS}/split.lua by=Result"                          1_0.pgn          ex_split_1_0.pgn)
+
+# Engine examples, driven against the mock. A constant eval never swings, so
+# blunder tags nothing and passes every game.
+tt_case(ex_blunder -f fixtures/three_games.pgn -p "${PLUGINS}/blunder.lua engine=mock/uci_engine.sh depth=6" -p "plugins/count.lua expect=3" --no-output)
+set_tests_properties(ex_blunder PROPERTIES TIMEOUT 30)
+
+# puzzle -> collect: a mate score makes every game hand a position downstream.
+tt_case(ex_puzzle_mate -f fixtures/three_games.pgn -p "${PLUGINS}/puzzle.lua engine=mock/uci_engine.sh depth=4 mate=3" -p "${PLUGINS}/collect.lua" -p "plugins/count.lua expect=3" --no-output)
+set_tests_properties(ex_puzzle_mate PROPERTIES TIMEOUT 30 ENVIRONMENT "TT_MOCK_SCORE=mate 3")
+
+# Without a mate the scan finds nothing and drops every game.
+tt_case(ex_puzzle_none -f fixtures/three_games.pgn -p "${PLUGINS}/puzzle.lua engine=mock/uci_engine.sh depth=4 mate=3" -p "${PLUGINS}/collect.lua" -p "plugins/count.lua expect=0" --no-output)
+set_tests_properties(ex_puzzle_none PROPERTIES TIMEOUT 30)
+
+# Regression: ctx.args:number() yields a float; analyse must accept an integral
+# one (depth=6 above) but reject a fractional one.
+tt_error(ex_puzzle_frac_depth "must be a whole number" -f fixtures/three_games.pgn -p "${PLUGINS}/puzzle.lua engine=mock/uci_engine.sh depth=3.5" --no-output)
+set_tests_properties(ex_puzzle_frac_depth PROPERTIES TIMEOUT 30)

@@ -1,0 +1,20 @@
+[Event "Dup"]
+[White "Alice"]
+[Black "Bob"]
+[Result "1-0"]
+
+1. e4 e5 1-0
+
+[Event "Other"]
+[White "Carol"]
+[Black "Dave"]
+[Result "0-1"]
+
+1. d4 d5 0-1
+
+[Event "Dup"]
+[White "Alice"]
+[Black "Bob"]
+[Result "1-0"]
+
+1. e4 e5 1-0
