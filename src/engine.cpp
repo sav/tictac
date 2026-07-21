@@ -49,7 +49,13 @@ Engine::Engine(std::string const &path, std::unordered_map<std::string, std::str
     }
 
     pid_ = ::fork();
-    if (pid_ < 0) throw std::runtime_error("engine: fork failed");
+    if (pid_ < 0) {
+        ::close(in_pipe[0]);
+        ::close(in_pipe[1]);
+        ::close(out_pipe[0]);
+        ::close(out_pipe[1]);
+        throw std::runtime_error("engine: fork failed");
+    }
 
     if (pid_ == 0) {
         // Child: wire pipes to stdin/stdout and exec the engine.
