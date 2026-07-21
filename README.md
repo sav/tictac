@@ -61,7 +61,9 @@ For example, keep only Fischer's white games and write them out:
 tictac --file games.pgn --plugin "filter.lua white=^Fischer" --output fischer.pgn
 ```
 
-See [`plugins/`](plugins/) for runnable examples (`echo.lua`, `filter.lua`).
+See [`plugins/`](plugins/) for runnable examples -- filters, a deduplicator, a
+splitter, CSV and histogram reporters, and engine-driven blunder/puzzle finders
+-- and [`LUA.md`](LUA.md) for the plugin interface and an archetype catalog.
 
 ## Build
 
