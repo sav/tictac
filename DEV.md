@@ -56,10 +56,10 @@ over heap, and the Core Guidelines [0].
 - **No** C-style casts (use `static_cast` etc., or none), C arrays / pointer+length in
   interfaces (use `array`/`vector`/`span`), `#define` for constants/functions, or
   `using namespace std;` in headers.
-- **Always prefix C function calls:** use `std::` when a C++ standard library equivalent exists
-  (e.g., `std::filesystem` instead of C file functions); otherwise prefix with `::` to
-  explicitly use the global namespace (e.g., `::pipe()`, `::write()`, `::read()`, `::fork()`,
-  `::close()`). Never leave C function calls unprefixed.
+- **Always prefix C function calls:** `std::` when a C++ standard library equivalent
+  exists (e.g., `std::filesystem` over C file functions); otherwise `::` for the global
+  namespace (e.g., `::pipe()`, `::write()`, `::read()`, `::fork()`, `::close()`). Never
+  leave a C call unprefixed.
 - `nullptr`, not `NULL`/`0`. `'\n'`, not `std::endl`.
 - No dangling references/`string_view`/`span` to locals. No premature `shared_ptr` or
   optimization. No silently swallowed errors / empty `catch (...)`.
@@ -70,12 +70,12 @@ over heap, and the Core Guidelines [0].
   if trivial and include-light) -- never in a differently-named TU; justify deviations with
   a comment at the definition site.
 - Define functions in the `.cpp` in the same order they are declared in the `.hpp`.
-- When a function `foobar` is comprised of distinct "sections", break each out into a
-  `detail::<secname>` helper rather than leaving one long body. If `foobar` is a public API,
-  keep the section helpers TU-local: put them in a `detail` namespace nested inside an
-  anonymous namespace above `foobar`'s definition, so they keep internal linkage and don't
-  leak into the header. Types the enclosing code also names (a result struct returned to
-  `foobar`) stay in the anonymous namespace, outside `detail`.
+- When a function `foobar` has distinct "sections", break each into a `detail::<secname>`
+  helper instead of one long body. If `foobar` is a public API, keep the helpers TU-local:
+  a `detail` namespace nested inside an anonymous namespace above `foobar`'s definition, so
+  they keep internal linkage and don't leak into the header. Types the enclosing code also
+  names (a result struct returned to `foobar`) stay in the anonymous namespace, outside
+  `detail`.
 - Follow existing project style; else pick one and stay consistent.
 - **Comment the why, not the what**; API docstrings and file headers excepted.
 - **No divider comments** (`// -- Foo ------`) outside functions. Inside a function you may
@@ -83,7 +83,7 @@ over heap, and the Core Guidelines [0].
 - When hand-layout genuinely reads better than the formatter's (e.g. a wide table of
   bindings), wrap that region in `// clang-format off` / `// clang-format on` rather than
   fighting it with filler markers like trailing `//`. Use it only where it earns its keep;
-  don't sprinkle `// clang-format off` across the codebase.
+  don't sprinkle it across the codebase.
 
 ### 3.2 `const` and passing
 
@@ -111,16 +111,15 @@ over heap, and the Core Guidelines [0].
   Keep the braces when they earn their keep: the body is itself a control-flow
   statement (`if`/`for`/`while`), it carries a multi-line comment, or another
   branch of the same chain needs braces (don't mix braced and braceless siblings).
-- **`goto` is allowed. Do not avoid it on principle, and do not rewrite a working
-  `goto` just because it is a `goto`.** It is sometimes the clearest way to express
-  the flow: a shared cleanup or error path several branches jump to, breaking out of
-  nested loops, or a jump out of a `switch` to common handling. In those cases a
-  `goto` with a well-named label beats the alternatives (a lambda invented only to
-  hold the tail, a `bool done` flag threaded through the loops, or the same three
-  lines copied into every branch), and it is what the C++ Core Guidelines allow too.
-  Judge it like any other construct: keep it when it makes the flow easier to follow,
-  and reach for something else only when it genuinely reads better -- never as a
-  reflex. The guard-clause preference above is about `if / else if` chains; it is not
+- **`goto` is allowed. Don't avoid it on principle, and don't rewrite a working `goto`
+  just because it is one.** It is sometimes the clearest way to express the flow: a shared
+  cleanup or error path several branches jump to, breaking out of nested loops, or a jump
+  out of a `switch` to common handling. There a `goto` with a well-named label beats the
+  alternatives (a lambda invented only to hold the tail, a `bool done` flag threaded
+  through the loops, or the same lines copied into every branch), and the C++ Core
+  Guidelines allow it too. Judge it like any other construct: keep it when it makes the
+  flow easier to follow, reach for something else only when it genuinely reads better --
+  never as a reflex. The guard-clause preference above is about `if / else if` chains, not
   an argument against `goto`.
 - **One consistent error strategy:** exceptions for exceptional failures (STL default);
   `expected<T,E>` for recoverable/value-like errors or where exceptions are banned;
