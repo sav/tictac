@@ -52,6 +52,11 @@ so nothing gets silently lost.
 
 ## Engine
 
+- **Blocking reads have no timeout.** `Engine::readLine` blocks on `::read` with
+  no bound, so a live-but-silent engine hangs the program forever (a dead engine
+  is already handled by the `n <= 0` throw). Gate reads on `::poll` with an idle
+  timeout; see [`ENGINE.md`](ENGINE.md) for the design.
+
 - **`EINTR` tears down the engine session.** `Engine::send` and `Engine::readLine` treat
   any `n <= 0` from `::write`/`::read` as fatal. A signal delivered mid-call makes the
   syscall return -1 with `errno == EINTR`, which is retryable rather than an error, so a
