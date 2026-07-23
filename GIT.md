@@ -4,14 +4,14 @@ Expert-level habits. Keep history clean, reviewable, and recoverable.
 
 ## Non-negotiables
 
-- **Use `git mv` (and `git rm`) -- never move/rename with the OS.** Moving a file outside git detaches its history; `git mv` preserves it so blame, rename-detection, and diffs stay intact.
-- **Commit per task, not per feature.** Each commit is one logical, self-contained change with a clear message. Commit incrementally as you go -- a giant end-of-feature commit is impossible to review or bisect.
-- **Address PR feedback with fixup commits, not force-push.** For each review point, run `git commit --fixup=<sha>` targeting the *specific commit that introduced the code being changed* -- not just the tip. Use `git log`/`git blame` to find the right `<sha>`. If a review point touches code from several commits, create more than one fixup so each lands on its proper parent. The reviewer sees exactly what changed since last round. Squash them only at the end with `git rebase -i --autosquash <base>` before merge, then update the pushed branch with `git push --force-with-lease` (never plain `git push --force`) so the rewrite refuses to clobber any work that landed on the remote in the meantime.
-- **Use `git worktree` when possible.** Check out a branch in a separate directory instead of stashing/switching. Lets you review, hotfix, or build in parallel without disturbing your working tree: `git worktree add ../repo-hotfix hotfix-branch`.
+- **Use `git mv` (and `git rm`) -- never move/rename with the OS.** Moving a file outside git detaches its history; `git mv` preserves blame, rename-detection, and diffs.
+- **Commit per task, not per feature.** Each commit is one logical, self-contained change with a clear message. Commit incrementally -- a giant end-of-feature commit is impossible to review or bisect.
+- **Address PR feedback with fixup commits, not force-push.** Run `git commit --fixup=<sha>` targeting the *specific commit that introduced the changed code*, not just the tip; find the `<sha>` with `git log`/`git blame`. If a review point touches several commits, make more than one fixup so each lands on its proper parent. The reviewer sees exactly what changed since last round. Squash only at the end, before merge, with `git rebase -i --autosquash <base>`, then update the pushed branch with `git push --force-with-lease` (never plain `git push --force`) so the rewrite refuses to clobber work that landed on the remote meanwhile.
+- **Use `git worktree` when possible.** Check out a branch in a separate directory instead of stashing/switching, to review, hotfix, or build in parallel without disturbing your working tree: `git worktree add ../repo-hotfix hotfix-branch`.
 
 ## Commits
 
-- Write imperative subject lines ≤50 chars ("Add", not "Added"); blank line; body explaining *why*, not *what*.
+- Imperative subject lines <=50 chars ("Add", not "Added"); blank line; body explaining *why*, not *what*.
 - Stage deliberately with `git add -p` to keep unrelated changes out of a commit.
 - Never commit secrets, generated files, or commented-out code.
 
@@ -30,7 +30,7 @@ Expert-level habits. Keep history clean, reviewable, and recoverable.
 
 ## Recovery & safety
 
-- **Tags are reserved exclusively for releases** (`vX.Y.Z`) -- never create a tag as a backup, checkpoint, or bookmark. When a backup genuinely feels warranted -- reserve it for *critical, high-risk refactors* (a sweeping multi-commit history rewrite), not routine rebases/resets/filters -- save it as a local branch: `git branch backup/<name> HEAD`, then `git reset --hard backup/<name>` to restore. Don't spam backup branches before ordinary rewrites; `git reflog` already covers those.
+- **Tags are reserved exclusively for releases** (`vX.Y.Z`) -- never create a tag as a backup, checkpoint, or bookmark. When a backup is genuinely warranted -- only for *critical, high-risk refactors* (a sweeping multi-commit history rewrite), not routine rebases/resets/filters -- save it as a local branch: `git branch backup/<name> HEAD`, then `git reset --hard backup/<name>` to restore. Don't spam backup branches before ordinary rewrites; `git reflog` already covers those.
 - `git reflog` is your undo history -- almost nothing is truly lost.
 - `git stash` for quick context switches (or better, a worktree).
 - `git bisect` to pin down the commit that introduced a bug.
