@@ -4,6 +4,8 @@
 
 - Always use C++23.
 - Avoid unnecessary comments.
+- For development instructions, follow @DEV.md
+- Use the clangd LSP tools for C++ navigation.
 
 ## Writing Style
 
@@ -40,12 +42,6 @@ produced by an LLM.
 
 - Don't build after every change. Build only when explicitly asked. When you do build, fix any errors that come up.
 
-## Best Practices
-
-- For development instructions, follow @DEV.md
-- For git and github best practices, follow @GIT.md
-- Use the clangd LSP tools for C++ navigation.
-
 ## Documentation
 
 - Keep `README.md` in sync with the code. Whenever a change affects something the
@@ -61,6 +57,7 @@ produced by an LLM.
 
 ## Git
 
+- For git and github best practices, follow @GIT.md
 - **Match the commit message style already in `git log` -- it is the authority.**
   Before committing, read it: `git log -5 --format='%s%n%b'`, and write messages
   that look like what you find, whatever that turns out to be.
