@@ -1,7 +1,7 @@
 # TODO
 
-Deferred work and reserved interfaces that are not yet implemented. Keep this current
-so nothing gets silently lost.
+Deferred work and reserved interfaces not yet implemented. Keep this current so
+nothing gets silently lost.
 
 ## Runtime
 
@@ -10,9 +10,8 @@ so nothing gets silently lost.
   that reads games one at a time and dispatches each to a worker, synchronizing output
   so concurrent writes never corrupt the format.
 
-- **Read PGNs from stdin.** Accept PGN input on standard input, and process games as
-  they arrive -- stream game-by-game rather than buffering many games and waiting for
-  EOF.
+- **Read PGNs from stdin.** Accept PGN input on standard input and process games as
+  they arrive.
 
 - **Replace the exception-based parser abort with an upstream `stop()`.** Stopping
   mid-file currently unwinds a `StopParsing` exception out of `Builder::endPgn`, caught
@@ -21,41 +20,37 @@ so nothing gets silently lost.
   to a release that carries it, and swap the exception for a flag check in the
   `readGames` loop.
 
-- **Early parser abort rides on an exception.** `parseGames` stops mid-file by throwing
-  `StopParsing` out of `Builder::endPgn` and catching it around `readGames`, because
-  `chess::pgn::StreamParser` exposes no way to be told to stop. The library already has
-  the plumbing next door -- `Visitor::skipPgn()`/`skip()` -- so a `stop()` honored by the
-  `readGames` loop is a small upstream patch. Send it, and once a release carries it,
-  bump the FetchContent pin and drop the sentinel exception for a plain flag check.
-
 - **Drop callback for plugin errors.** Under `--on-error pass`/`drop`, a failing
-  `process()` only writes to stderr. Let the embedder supply a "drop callback" that is
-  invoked with the error (plugin name, game index, message) so failures can be
-  collected or handled programmatically instead of merely printed.
+  `process()` only writes to stderr. Let the embedder supply a "drop callback" invoked
+  with the error (plugin name, game index, message) so failures can be collected or
+  handled programmatically instead of merely printed.
 
-- **NAGs are never parsed from input.** `Game::pgn()` writes `MoveData::nags`, and
-  `move:nags()`/`move:addNag()` are documented in LUA.md, but nothing populates the
-  field: `chess::pgn::Visitor::move()` only hands back the move and its comment, so a
-  `$1` in the source PGN is dropped and a read-write round-trip loses every
-  annotation. Parsing NAGs needs either a change to the upstream visitor interface or
-  a pre-pass over the movetext. Until then `move:nags()` returns an empty table for
-  every parsed game.
+- **Implement the missing PGN parsers.** Two movetext constructs are parsed away on
+  input, so a read-write round-trip drops them:
 
-- **Variations (RAV) are never parsed from input.** `Game` models only the mainline:
-  `moves` is a flat `std::vector<MoveData>` with no room for a subtree. The upstream
-  parser does not expose variations either -- it hits `(` and calls
-  `skipUntil('(', ')')`, so a variation never reaches `Visitor::move()`. The moves are
-  therefore dropped silently, and `Game::pgn()` writes the game back without them:
-  `1. e4 e5 (1... c5 2. Nf3) 2. Nf3` round-trips as `1. e4 e5 2. Nf3`. Supporting them
-  needs both a recursive move model (each `MoveData` owning child lines) and a
-  movetext pre-pass or an upstream visitor change to see the variation at all.
+  - *NAGs are never parsed.* `Game::pgn()` writes `MoveData::nags` and
+    `move:nags()`/`move:addNag()` are documented in LUA.md, but nothing populates the
+    field: `chess::pgn::Visitor::move()` hands back only the move and its comment, so a
+    `$1` in the source PGN is dropped and a read-write round-trip loses every annotation.
+    Parsing NAGs needs either a change to the upstream visitor interface or a pre-pass
+    over the movetext. Until then `move:nags()` returns an empty table for every parsed
+    game.
+
+  - *Variations (RAV) are never parsed.* `Game` models only the mainline: `moves` is a
+    flat `std::vector<MoveData>` with no room for a subtree. The upstream parser does not
+    expose variations either -- it hits `(` and calls `skipUntil('(', ')')`, so a
+    variation never reaches `Visitor::move()`. The moves are dropped silently and
+    `Game::pgn()` writes the game back without them: `1. e4 e5 (1... c5 2. Nf3) 2. Nf3`
+    round-trips as `1. e4 e5 2. Nf3`. Supporting them needs both a recursive move model
+    (each `MoveData` owning child lines) and a movetext pre-pass or an upstream visitor
+    change to see the variation at all.
 
 ## Engine
 
-- **Blocking reads have no timeout.** `Engine::readLine` blocks on `::read` with
-  no bound, so a live-but-silent engine hangs the program forever (a dead engine
-  is already handled by the `n <= 0` throw). Gate reads on `::poll` with an idle
-  timeout; see [`ENGINE.md`](ENGINE.md) for the design.
+- **Blocking reads have no timeout.** `Engine::readLine` blocks on `::read` with no
+  bound, so a live-but-silent engine hangs the program forever (a dead engine is already
+  handled by the `n <= 0` throw). Gate reads on `::poll` with an idle timeout; see
+  [`ENGINE.md`](ENGINE.md) for the design.
 
 - **`EINTR` tears down the engine session.** `Engine::send` and `Engine::readLine` treat
   any `n <= 0` from `::write`/`::read` as fatal. A signal delivered mid-call makes the
@@ -64,7 +59,7 @@ so nothing gets silently lost.
   unexpectedly". Both loops should retry on `EINTR` and only throw for real failures.
 
 - **engine.cpp defines members in a different order than engine.hpp declares them.**
-  DEV.md asks for the definition order to follow the declaration order; the header lists
+  DEV.md asks the definition order to follow the declaration order; the header lists
   `setOption`/`analyse` before the private helpers, while the `.cpp` puts `handshake` and
   `shutdown` first. Reordering is a large, purely mechanical diff, so it was left out of
   the review round that found it.
@@ -75,18 +70,18 @@ so nothing gets silently lost.
 
 ## Plugins
 
-- **Argument schema validation and `--help`** Plugins may declare a `meta.args`
-  schema (`type`/`default`/`help`) plus `meta.version`/`meta.description`, and
-  LUA.md says the schema is "used for validation and --help" -- but `loadPlugins`
-  only reads `meta.name`. Argument types are never validated and there is no
-  per-plugin help. Implement schema-based validation and a plugin `--help`/info
-  path, or drop the unimplemented promise from the docs.
+- **Argument schema validation and `--help`.** Plugins may declare a `meta.args` schema
+  (`type`/`default`/`help`) plus `meta.version`/`meta.description`, and LUA.md says the
+  schema is "used for validation and --help" -- but `loadPlugins` only reads `meta.name`.
+  Argument types are never validated and there is no per-plugin help. Implement
+  schema-based validation and a plugin `--help`/info path, or drop the unimplemented
+  promise from the docs.
 
-- **Accessor defaults from `meta.args`.** The `ctx.args` accessors currently
-  return `nil` for an absent key unless the plugin passes an explicit default at
-  the call site. Once `meta.args` is read (see above), fall back to the schema's
-  declared `default` for that key so `ctx.args:number("depth")` yields the
-  declared default without repeating it in every accessor call.
+- **Accessor defaults from `meta.args`.** The `ctx.args` accessors return `nil` for an
+  absent key unless the plugin passes an explicit default at the call site. Once
+  `meta.args` is read (see above), fall back to the schema's declared `default` so
+  `ctx.args:number("depth")` yields the declared default without repeating it in every
+  accessor call.
 
 ## Build
 
