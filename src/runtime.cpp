@@ -68,6 +68,7 @@ sol::table analysisToTable(sol::state_view lua, Analysis const &a) {
     if (a.score) table["score"] = *a.score;
     if (a.mate) table["mate"] = *a.mate;
     table["depth"] = a.depth;
+    table["seldepth"] = a.seldepth;
     table["nodes"] = a.nodes;
     table["time"] = a.time;
     table["nps"] = a.nps;

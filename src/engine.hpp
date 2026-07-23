@@ -25,6 +25,7 @@ struct Analysis {
     std::optional<double> score;
     std::optional<int> mate;
     int depth = 0;
+    int seldepth = 0; // deepest line the search actually reached
     std::int64_t nodes = 0;
     std::int64_t time = 0; // milliseconds
     std::int64_t nps = 0;

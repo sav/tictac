@@ -164,8 +164,8 @@ void Engine::setOption(std::string const &name, std::string const &value) {
 namespace {
 
 // One parsed "info" line. `slot` is the 1-based multipv index it describes, and
-// `scored` records whether it carried a score at all -- depth/nodes/time/nps
-// are engine-wide rather than per-line, so they land in `overall` instead.
+// `scored` records whether it carried a score at all -- depth/seldepth/nodes/
+// time/nps are engine-wide rather than per-line, so they land in `overall`.
 struct InfoLine {
     AnalysisLine line;
     int slot = 1;
@@ -188,6 +188,8 @@ InfoLine parseInfo(std::istringstream &iss, Analysis &overall) {
     while (iss >> tok) {
         if (tok == "depth") {
             iss >> overall.depth;
+        } else if (tok == "seldepth") {
+            iss >> overall.seldepth;
         } else if (tok == "nodes") {
             iss >> overall.nodes;
         } else if (tok == "time") {
