@@ -200,18 +200,11 @@ InfoLine parseInfo(std::istringstream &iss, Analysis &overall) {
             iss >> info.slot;
         } else if (tok == "score") {
             std::string kind;
-            iss >> kind;
-            if (kind == "cp") {
-                int cp = 0;
-                iss >> cp;
-                info.line.score = static_cast<double>(cp);
-                info.scored = true;
-            } else if (kind == "mate") {
-                int m = 0;
-                iss >> m;
-                info.line.mate = m;
-                info.scored = true;
-            }
+            int val = 0;
+            iss >> kind >> val;
+            if (kind == "cp") info.line.score = static_cast<double>(val);
+            else if (kind == "mate") info.line.mate = val;
+            info.scored = kind == "cp" || kind == "mate";
         } else if (tok == "pv") {
             std::string mv;
             while (iss >> mv) info.line.pv.push_back(mv);
