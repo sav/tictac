@@ -36,7 +36,7 @@ flowchart LR
 ## 2. Command-line surface
 
 ```sh
-tictac --file <db.pgn> [--plugin <spec>]... [--output <file>] [--jobs N] [--on-error <mode>]
+tictac --file <db.pgn> [--plugin <spec>]... [--output <file>] [--on-error <mode>]
 ```
 
 | Flag | Meaning |
@@ -46,7 +46,6 @@ tictac --file <db.pgn> [--plugin <spec>]... [--output <file>] [--jobs N] [--on-e
 | `--output`, `-o` | Where surviving games are written (default: stdout, PGN). `-` = stdout, omit with `--no-output`. |
 | `--no-output` | Discard the default game stream (useful for pure reporters). |
 | `--on-error` | `abort` \| `drop` \| `pass` (default `abort`) -- how a plugin's failing `process()` is handled: `abort` halts the run, `drop` drops the game, `pass` passes it through unchanged; all three log the error. A failing `init` always aborts. |
-| `--jobs`, `-j` | Reserved: parallel game workers (not yet implemented). Plugins must be written to tolerate concurrent games. |
 
 ### Plugin spec & arguments
 
@@ -755,6 +754,7 @@ optional. Analysing with no limit raises an error.
 | `r.score` | number | Centipawns, **relative to the side to move** (positive = side to move is better). `nil` if mate. |
 | `r.mate` | number | Mate in N (signed, side-to-move relative). `nil` if not mate. |
 | `r.depth` | number | Reached search depth. |
+| `r.seldepth` | number | Deepest line the selective search actually reached. |
 | `r.nodes`, `r.time`, `r.nps` | number | Search stats. |
 | `r.bestmove` | string | Best move (UCI). |
 | `r.pv` | array | Principal variation as UCI move strings. |
