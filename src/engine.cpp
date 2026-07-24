@@ -92,71 +92,6 @@ Engine::Engine(std::string const &path, std::unordered_map<std::string, std::str
 
 Engine::~Engine() { shutdown(); }
 
-void Engine::syncReady() {
-    send("isready");
-    waitFor("readyok");
-}
-
-void Engine::handshake(std::unordered_map<std::string, std::string> const &options) {
-    send("uci");
-    waitFor("uciok");
-    for (auto const &[name, value] : options) setOption(name, value);
-    syncReady();
-}
-
-void Engine::shutdown() noexcept {
-    if (pid_ <= 0) return;
-    if (to_engine_ >= 0) {
-        // Best effort: a dead engine makes this fail, which is fine here.
-        constexpr std::string_view quit = "quit\n";
-        [[maybe_unused]] std::ptrdiff_t const n = ::write(to_engine_, quit.data(), quit.size());
-        ::close(to_engine_);
-        to_engine_ = -1;
-    }
-    if (from_engine_ >= 0) {
-        ::close(from_engine_);
-        from_engine_ = -1;
-    }
-    int status = 0;
-    if (::waitpid(pid_, &status, WNOHANG) == 0) {
-        ::kill(pid_, SIGTERM);
-        ::waitpid(pid_, &status, 0);
-    }
-    pid_ = -1;
-}
-
-void Engine::send(std::string const &line) {
-    std::string data = line + "\n";
-    std::ptrdiff_t off = 0;
-    while (off < static_cast<std::ptrdiff_t>(data.size())) {
-        std::ptrdiff_t n =
-            ::write(to_engine_, data.data() + off, data.size() - static_cast<std::size_t>(off));
-        if (n <= 0) throw std::runtime_error("engine: write failed");
-        off += n;
-    }
-}
-
-std::string Engine::readLine() {
-    for (;;) {
-        auto nl = read_buffer_.find('\n');
-        if (nl != std::string::npos) {
-            std::string line = read_buffer_.substr(0, nl);
-            read_buffer_.erase(0, nl + 1);
-            if (!line.empty() && line.back() == '\r') line.pop_back();
-            return line;
-        }
-        std::array<char, 4096> buf;
-        std::ptrdiff_t n = ::read(from_engine_, buf.data(), buf.size());
-        if (n <= 0) throw std::runtime_error("engine: process closed unexpectedly");
-        read_buffer_.append(buf.data(), static_cast<std::size_t>(n));
-    }
-}
-
-void Engine::waitFor(std::string const &token) {
-    for (;;)
-        if (readLine() == token) return;
-}
-
 void Engine::setOption(std::string const &name, std::string const &value) {
     send("setoption name " + name + " value " + value);
 }
@@ -257,6 +192,71 @@ Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
     }
     detail::collect(result, lines, limits.multipv);
     return result;
+}
+
+void Engine::send(std::string const &line) {
+    std::string data = line + "\n";
+    std::ptrdiff_t off = 0;
+    while (off < static_cast<std::ptrdiff_t>(data.size())) {
+        std::ptrdiff_t n =
+            ::write(to_engine_, data.data() + off, data.size() - static_cast<std::size_t>(off));
+        if (n <= 0) throw std::runtime_error("engine: write failed");
+        off += n;
+    }
+}
+
+std::string Engine::readLine() {
+    for (;;) {
+        auto nl = read_buffer_.find('\n');
+        if (nl != std::string::npos) {
+            std::string line = read_buffer_.substr(0, nl);
+            read_buffer_.erase(0, nl + 1);
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            return line;
+        }
+        std::array<char, 4096> buf;
+        std::ptrdiff_t n = ::read(from_engine_, buf.data(), buf.size());
+        if (n <= 0) throw std::runtime_error("engine: process closed unexpectedly");
+        read_buffer_.append(buf.data(), static_cast<std::size_t>(n));
+    }
+}
+
+void Engine::waitFor(std::string const &token) {
+    for (;;)
+        if (readLine() == token) return;
+}
+
+void Engine::syncReady() {
+    send("isready");
+    waitFor("readyok");
+}
+
+void Engine::handshake(std::unordered_map<std::string, std::string> const &options) {
+    send("uci");
+    waitFor("uciok");
+    for (auto const &[name, value] : options) setOption(name, value);
+    syncReady();
+}
+
+void Engine::shutdown() noexcept {
+    if (pid_ <= 0) return;
+    if (to_engine_ >= 0) {
+        // Best effort: a dead engine makes this fail, which is fine here.
+        constexpr std::string_view quit = "quit\n";
+        [[maybe_unused]] std::ptrdiff_t const n = ::write(to_engine_, quit.data(), quit.size());
+        ::close(to_engine_);
+        to_engine_ = -1;
+    }
+    if (from_engine_ >= 0) {
+        ::close(from_engine_);
+        from_engine_ = -1;
+    }
+    int status = 0;
+    if (::waitpid(pid_, &status, WNOHANG) == 0) {
+        ::kill(pid_, SIGTERM);
+        ::waitpid(pid_, &status, 0);
+    }
+    pid_ = -1;
 }
 
 } // namespace tictac
