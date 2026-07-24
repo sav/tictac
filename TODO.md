@@ -58,6 +58,18 @@ nothing gets silently lost.
   well-timed signal kills a working engine with "write failed" or "process closed
   unexpectedly". Both loops should retry on `EINTR` and only throw for real failures.
 
+- **Per-ply position evaluation.** Evaluate every position with the UCI engine and surface
+  its best line(s). `GameVisitor::move()` submits `board_.getFen()` per ply for
+  non-blocking analysis returning a `std::future<Analysis>` (score in cp/mate plus one
+  `PvLine` per MultiPV index), fulfilled when the engine reports `bestmove`; futures are
+  drained and printed at end of game so parsing stays responsive. Make it opt-in and
+  engine-agnostic via CLI flags: `--engine <path>`, `--engine-arg` (repeatable),
+  `--engine-option NAME=VALUE` (repeatable, feeds `setoption`), `--multipv`, and the
+  mutually-exclusive `--eval-depth`/`--eval-movetime`/`--eval-nodes`; without `--engine`
+  behavior is unchanged. A process pool over a shared FEN queue is a natural extension.
+  (Explored in the dropped PR #2 on branch `claude/uci-engine-adapter`, against a since
+  -drifted `uci::UciEngine`/reproc++ design; re-implement over the current `Engine`.)
+
 ## Plugins
 
 - **Argument schema validation and `--help`.** Plugins may declare a `meta.args` schema
