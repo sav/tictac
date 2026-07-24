@@ -196,9 +196,9 @@ Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
 
 void Engine::send(std::string const &line) {
     std::string data = line + "\n";
-    std::ptrdiff_t off = 0;
-    while (off < static_cast<std::ptrdiff_t>(data.size())) {
-        std::ptrdiff_t n =
+    ssize_t off = 0;
+    while (off < static_cast<ssize_t>(data.size())) {
+        ssize_t n =
             ::write(to_engine_, data.data() + off, data.size() - static_cast<std::size_t>(off));
         if (n <= 0) throw std::runtime_error("engine: write failed");
         off += n;
@@ -215,7 +215,7 @@ std::string Engine::readLine() {
             return line;
         }
         std::array<char, 4096> buf;
-        std::ptrdiff_t n = ::read(from_engine_, buf.data(), buf.size());
+        ssize_t n = ::read(from_engine_, buf.data(), buf.size());
         if (n <= 0) throw std::runtime_error("engine: process closed unexpectedly");
         read_buffer_.append(buf.data(), static_cast<std::size_t>(n));
     }
@@ -243,7 +243,7 @@ void Engine::shutdown() noexcept {
     if (to_engine_ >= 0) {
         // Best effort: a dead engine makes this fail, which is fine here.
         constexpr std::string_view quit = "quit\n";
-        [[maybe_unused]] std::ptrdiff_t const n = ::write(to_engine_, quit.data(), quit.size());
+        [[maybe_unused]] ssize_t const n = ::write(to_engine_, quit.data(), quit.size());
         ::close(to_engine_);
         to_engine_ = -1;
     }
