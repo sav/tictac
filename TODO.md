@@ -3,12 +3,35 @@
 Deferred work and reserved interfaces not yet implemented. Keep this current so
 nothing gets silently lost.
 
-## Runtime
+## Concurrency
+
+These three are pieces of one async pipeline and are best designed together: parallel
+workers spread games across threads, the non-blocking engine API lets each worker keep
+several analyses in flight instead of blocking per position, and readiness-based I/O
+multiplexing (`poll`/`epoll`) lets a single event loop drive many engines without any
+thread blocking on a single read.
 
 - **Parallel game workers (`-j`/`--jobs`).** `Runtime::run` processes games
   sequentially. Add a parallel execution path (thread pool / `std::execution` policy)
-  that reads games one at a time and dispatches each to a worker, synchronizing output
-  so concurrent writes never corrupt the format.
+  that reads games one at a time and dispatches each to a worker, multiplexing the input
+  across pipelines that converge on the same output -- synchronizing writes so concurrent
+  workers never overlap or corrupt the format.
+
+- **Non-blocking engine API.** `Engine::analyse` blocks the caller until the engine
+  reports `bestmove`, so one thread can drive only a single position at a time and cannot
+  overlap analysis with parsing or with other engines. Add an asynchronous entry point --
+  submit a position and get back a `std::future<Analysis>` (or a completion callback) that
+  resolves when `bestmove` arrives -- so callers keep multiple analyses in flight and stay
+  responsive. This is the API the per-ply evaluation (see Engine) and a process pool over
+  a shared FEN queue would build on.
+
+- **Blocking reads have no timeout.** `Engine::readLine` blocks on `::read` with no
+  bound, so a live-but-silent engine hangs the program forever (a dead engine is already
+  handled by the `n <= 0` throw). Gate reads on `::poll` with an idle timeout; see
+  [`ENGINE.md`](ENGINE.md) for the design. The same readiness check generalizes to an
+  `epoll` loop that multiplexes several engines' output streams for the async API above.
+
+## Runtime
 
 - **Read PGNs from stdin.** Accept PGN input on standard input and process games as
   they arrive.
@@ -46,11 +69,6 @@ nothing gets silently lost.
     change to see the variation at all.
 
 ## Engine
-
-- **Blocking reads have no timeout.** `Engine::readLine` blocks on `::read` with no
-  bound, so a live-but-silent engine hangs the program forever (a dead engine is already
-  handled by the `n <= 0` throw). Gate reads on `::poll` with an idle timeout; see
-  [`ENGINE.md`](ENGINE.md) for the design.
 
 - **`EINTR` tears down the engine session.** `Engine::send` and `Engine::readLine` treat
   any `n <= 0` from `::write`/`::read` as fatal. A signal delivered mid-call makes the
