@@ -30,7 +30,8 @@ namespace {
         ->check(CLI::ExistingFile);
 
     std::vector<std::string> plugin_specs;
-    app.add_option("-p,--plugin", plugin_specs, "Plugin spec: \"file.lua key=value ...\" (repeatable)");
+    app.add_option("-p,--plugin", plugin_specs, "Plugin spec: \"file.lua key=value ...\" (repeatable)")
+        ->required();
 
     std::string output = "-";
     app.add_option("-o,--output", output, "Where surviving games are written (default: stdout)")

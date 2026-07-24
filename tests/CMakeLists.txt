@@ -87,6 +87,7 @@ function(tt_roundtrip name fixture)
   add_test(NAME ${name}
     COMMAND ${CMAKE_COMMAND}
       -DTICTAC=$<TARGET_FILE:tictac>
+      -DPLUGIN=${CMAKE_CURRENT_SOURCE_DIR}/plugins/return_modes.lua\ mode=pass
       -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/${fixture}
       -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/expected/${fixture}
       -DOUT=${CMAKE_CURRENT_BINARY_DIR}/${name}.pgn

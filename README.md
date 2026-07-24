@@ -44,13 +44,13 @@ lifecycle hooks -- `init` (once, at startup), `process` (once per game), and
 ## Usage
 
 ```sh
-tictac --file <db.pgn> [--plugin <spec>]... [--output <file>] [--on-error <mode>]
+tictac --file <db.pgn> --plugin <spec>... [--output <file>] [--on-error <mode>]
 ```
 
 | Flag | Meaning |
 |------|---------|
 | `-f`, `--file` | Input PGN database (repeatable; concatenated). |
-| `-p`, `--plugin` | A plugin spec: `"file.lua key=value ..."`. Repeatable; defines pipeline order. |
+| `-p`, `--plugin` | A plugin spec: `"file.lua key=value ..."`. Required; repeatable; defines pipeline order. |
 | `-o`, `--output` | Where surviving games are written (default: stdout, PGN). |
 | `--no-output` | Discard the default game stream (useful for pure reporters). |
 | `--on-error` | `abort` \| `drop` \| `pass` (default `abort`) -- how a plugin's failing `process()` is handled: `abort` halts the run, `drop` drops the game, `pass` passes it through unchanged; all three log the error. A failing `init` always aborts. |
