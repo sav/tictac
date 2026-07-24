@@ -58,10 +58,6 @@ nothing gets silently lost.
   well-timed signal kills a working engine with "write failed" or "process closed
   unexpectedly". Both loops should retry on `EINTR` and only throw for real failures.
 
-- **Engine syscall results use `std::ptrdiff_t`, not `ssize_t`.** The `::read`/`::write`
-  return values in engine.cpp are held in `std::ptrdiff_t`; switch them to the POSIX
-  `ssize_t`.
-
 ## Plugins
 
 - **Argument schema validation and `--help`.** Plugins may declare a `meta.args` schema
