@@ -15,6 +15,16 @@ function plugin.process(input, ctx)
   assert(g:header("White") == "Morphy", "header White: " .. tostring(g:header("White")))
   assert(g:moveCount() == 7, "moveCount: " .. tostring(g:moveCount()))
 
+  -- headers() returns the whole tag set as a table, keyed by tag name.
+  local h = g:headers()
+  assert(h.White == "Morphy", "headers White: " .. tostring(h.White))
+  assert(h.Black == "NN", "headers Black: " .. tostring(h.Black))
+  assert(h.Event == "Scholar's Mate", "headers Event: " .. tostring(h.Event))
+  assert(h.Result == "1-0", "headers Result: " .. tostring(h.Result))
+  local n = 0
+  for _ in pairs(h) do n = n + 1 end
+  assert(n == 7, "headers count: " .. tostring(n))
+
   -- Board (initial position via startBoard)
   local start = g:startBoard()
   assert(start:sideToMove() == "white", "start sideToMove")

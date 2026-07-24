@@ -207,6 +207,9 @@ set(PLUGINS ${CMAKE_CURRENT_SOURCE_DIR}/../plugins)
 
 # Stream-shaping examples, checked by a downstream assertion plugin.
 tt_case(ex_filter   -f fixtures/three_games.pgn -p "${PLUGINS}/filter.lua white=^Carol" -p "plugins/games_are.lua expect=Carol" --no-output)
+# Any non-reserved key names a PGN header to match, looked up case-insensitively:
+# `event` finds the `Event` tag, and only Carol's game is "Game Two".
+tt_case(ex_filter_header -f fixtures/three_games.pgn -p "${PLUGINS}/filter.lua event=Two" -p "plugins/games_are.lua expect=Carol" --no-output)
 tt_case(ex_position -f fixtures/three_games.pgn -p "${PLUGINS}/position.lua fen=rnbqkbnr" -p "plugins/count.lua expect=3" --no-output)
 tt_case(ex_dedup    -f fixtures/dup_games.pgn   -p "${PLUGINS}/dedup.lua"                 -p "plugins/count.lua expect=2" --no-output)
 

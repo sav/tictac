@@ -69,6 +69,34 @@ function plugin.init(ctx)
     "require: an absent key must raise")
   assert(not pcall(function() return a:require("empty") end),
     "require: 'empty=' must raise like an absent key")
+
+  -- each yields every key=value pair in command-line order, keeping repeats and
+  -- empties: a bare flag reads as "true", and "empty=" as an empty string.
+  local expect = {
+    { key = "one",   value = "1" },
+    { key = "many",  value = "a" },
+    { key = "many",  value = "b" },
+    { key = "nums",  value = "1" },
+    { key = "nums",  value = "2" },
+    { key = "empty", value = "" },
+    { key = "flag",  value = "true" },
+    { key = "yes",   value = "yes" },
+    { key = "off",   value = "off" },
+    { key = "tags",  value = "a,b,c" },
+    { key = "junk",  value = "20abc" },
+    { key = "word",  value = "abc" },
+    { key = "maybe", value = "perhaps" },
+    { key = "neg",   value = "-3" },
+    { key = "frac",  value = "1.5" },
+  }
+  local got = a:each()
+  assert(#got == #expect, "each: length " .. tostring(#got) .. ", want " .. tostring(#expect))
+  for i, want in ipairs(expect) do
+    assert(got[i].key == want.key,
+      "each: entry " .. i .. " key '" .. tostring(got[i].key) .. "', want '" .. want.key .. "'")
+    assert(got[i].value == want.value,
+      "each: entry " .. i .. " value '" .. tostring(got[i].value) .. "', want '" .. want.value .. "'")
+  end
 end
 
 function plugin.process(input)
