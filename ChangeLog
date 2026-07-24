@@ -1,0 +1,10 @@
+2026-07-23  Savio Sena  <savio.sena@gmail.com>
+
+	* Version 0.2.0 released.
+	* PGN game model with a streaming parser for large databases.
+	* UCI engine driver for position analysis.
+	* Lua plugin runtime and an ordered { game, board, data } pipeline.
+	* CLI application layer driving the plugin chain.
+	* Example Lua plugins (filter, dedup, analyze, and more).
+	* CMake build with warnings-as-errors, sanitizers, and an integration test suite.
+	* Project documentation: README and the LUA.md plugin interface.
