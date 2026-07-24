@@ -12,7 +12,10 @@ end
 
 function plugin.process(input, ctx)
   local key = input.game:pgn()
-  if ctx.scope.seen[key] then return false end
+  if ctx.scope.seen[key] then
+    ctx.log.info("dropped duplicate game %d", ctx.index)
+    return false
+  end
   ctx.scope.seen[key] = true
   return input
 end
