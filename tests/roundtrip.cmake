@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Copyright (C) 2026 Savio Sena <savio.sena@gmail.com>
 #
-# ctest driver: run tictac over a fixture with no plugins and require the
-# emitted PGN to match the expected file byte for byte.
+# ctest driver: run tictac over a fixture through a pass-through plugin and
+# require the emitted PGN to match the expected file byte for byte.
 
 execute_process(
-  COMMAND ${TICTAC} -f ${FIXTURE} -o ${OUT}
+  COMMAND ${TICTAC} -f ${FIXTURE} -p ${PLUGIN} -o ${OUT}
   RESULT_VARIABLE run_rc)
 if(NOT run_rc EQUAL 0)
   message(FATAL_ERROR "tictac exited ${run_rc} on ${FIXTURE}")
