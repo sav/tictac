@@ -246,7 +246,14 @@ ctx.args:number("depth", 20)         -- number, or array of numbers if repeated
 ctx.args:bool("verbose", false)      -- boolean, or array of booleans if repeated
 ctx.args:require("dir")              -- string or array; errors if missing
 ctx.args:list("tags")                -- "a,b,c" -> { "a", "b", "c" }; nil if absent
+ctx.args:each()                      -- every key=value, in order: { {key=, value=}, ... }
 ```
+
+`each` is the exception to the by-key accessors: it returns the full argument
+list as a 1-based array of `{ key = ..., value = ... }` tables (raw strings, in
+command-line order, duplicates and empty values included), so a plugin can act
+on keys it does not know ahead of time -- `filter.lua` uses it to treat any key
+as a PGN header name.
 
 The default is optional: `ctx.args:number("depth")` returns `nil` when `depth`
 is absent, not `0`. Pass a default only when you want a fallback value.
@@ -836,7 +843,7 @@ suite, so it stays working as the runtime moves. Invoke one with
 
 | Plugin | What it does | Example spec |
 |--------|--------------|--------------|
-| `filter.lua` | Keep games whose headers match: `white`/`black`/`player` patterns and `min_elo`. | `filter.lua player=^Carlsen min_elo=2700` |
+| `filter.lua` | Keep games whose headers match: any `key=pattern` names a header (case-insensitive), plus `player`/`min_elo`. | `filter.lua event=London player=^Carlsen min_elo=2700` |
 | `position.lua` | Forward the first position whose FEN starts with a prefix, as the board cursor. | `position.lua fen=rnbqkbnr` |
 | `dedup.lua` | Drop games already seen this run, keyed by serialized PGN. | `dedup.lua` |
 | `split.lua` | Write each game to its own file, grouped by a header value. | `split.lua by=ECO dir=out/` |

@@ -581,6 +581,18 @@ void registerArgs(sol::state_view lua) {
                 while (std::getline(ss, item, ',')) out[++n] = item;
             }
             return out;
+        },
+        "each", [](Args &a, sol::this_state ts) {
+            sol::state_view lua(ts);
+            sol::table out = lua.create_table();
+            int n = 0;
+            for (auto const &[k, v] : a.values) {
+                sol::table entry = lua.create_table();
+                entry["key"] = k;
+                entry["value"] = v;
+                out[++n] = entry;
+            }
+            return out;
         }
     );
 }
