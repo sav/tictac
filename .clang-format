@@ -10,3 +10,4 @@ AllowShortCaseLabelsOnASingleLine: true
 AllowShortLoopsOnASingleLine: true
 AllowShortBlocksOnASingleLine: Empty
 AllowShortFunctionsOnASingleLine: All
+AlwaysBreakTemplateDeclarations: Yes

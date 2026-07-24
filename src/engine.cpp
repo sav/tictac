@@ -198,8 +198,7 @@ void Engine::send(std::string const &line) {
     std::string data = line + "\n";
     ssize_t off = 0;
     while (off < static_cast<ssize_t>(data.size())) {
-        ssize_t n =
-            ::write(to_engine_, data.data() + off, data.size() - static_cast<std::size_t>(off));
+        ssize_t n = ::write(to_engine_, data.data() + off, data.size() - static_cast<std::size_t>(off));
         if (n <= 0) throw std::runtime_error("engine: write failed");
         off += n;
     }
