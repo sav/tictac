@@ -48,7 +48,8 @@ over heap, and the Core Guidelines [0].
   `v(3)` is three; use `()` for size/count.
 - Never a raw owning pointer: `unique_ptr`/`shared_ptr` for owned heap, containers for
   sequences, `T*`/`span`/`string_view` for views.
-- Fixed-width ints (`std::int32_t`, `std::size_t`, `std::ptrdiff_t`) when width matters (serialization, wire, hw).
+- Fixed-width ints (`std::int32_t`, `std::size_t`, `std::ptrdiff_t`) when width
+  matters (serialization, wire, hw).
 - Mark single-arg constructors and conversion operators `explicit` unless implicit is
   wanted.
 - Prefer `enum class`; fix the underlying type for ABI, forward decls, bit width, or
@@ -88,7 +89,12 @@ over heap, and the Core Guidelines [0].
 ### 3.2 `const` and passing
 
 - **`const` by default** for locals, member functions, parameters, pointees.
-- **Left-const style:** `const` goes on the right side of what it modifies. `int const x`, `T const& param`, `int const* ptr`. If there's nothing to the left (e.g., a leading parameter), `const` modifies the right: `const char* msg` is OK at function start, but declare it `char const*` for consistency with the rest of the codebase. Member function `const` stays on the right: `int run() const;` (it qualifies the method, not the return type).
+- **Left-const style:** `const` goes on the right side of what it modifies. `int
+  const x`, `T const& param`, `int const* ptr`. If there's nothing to the left
+  (e.g., a leading parameter), `const` modifies the right: `const char* msg` is
+  OK at function start, but declare it `char const*` for consistency with the
+  rest of the codebase. Member function `const` stays on the right: `int run()
+  const;` (it qualifies the method, not the return type).
 - Pass cheap-to-copy by value; large read-only by `T const&` or a view; sink args by
   value + `std::move`. Prefer returning values over out-params.
 - Return by value; trust NRVO -- don't `std::move` a local in `return`.
