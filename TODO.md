@@ -25,11 +25,11 @@ thread blocking on a single read.
   responsive. This is the API the per-ply evaluation (see Engine) and a process pool over
   a shared FEN queue would build on.
 
-- **Blocking reads have no timeout.** `Engine::readLine` blocks on `::read` with no
-  bound, so a live-but-silent engine hangs the program forever (a dead engine is already
-  handled by the `n <= 0` throw). Gate reads on `::poll` with an idle timeout; see
-  [`ENGINE.md`](ENGINE.md) for the design. The same readiness check generalizes to an
-  `epoll` loop that multiplexes several engines' output streams for the async API above.
+- **Blocking reads have no timeout.** `Engine::readLine` blocks on `::read` with
+  no bound, so a live-but-silent engine hangs the program forever (a dead engine
+  is already handled by the `n <= 0` throw). Gate reads on `::poll` with an idle
+  timeout. The same readiness check generalizes to an `epoll` loop that
+  multiplexes several engines' output streams for the async API above.
 
 ## Runtime
 
