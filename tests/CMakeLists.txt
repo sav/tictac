@@ -115,6 +115,18 @@ tt_case(board_cursor_start -f fixtures/scholars.pgn -p "plugins/board_check.lua 
 tt_case(board_cursor_handoff -f fixtures/scholars.pgn -p "plugins/board_check.lua mode=set" -p "plugins/board_check.lua mode=expect ply=2" --no-output)
 tt_case(board_cursor_kept -f fixtures/scholars.pgn -p "plugins/board_check.lua mode=set" -p "plugins/board_check.lua mode=forward_game" -p "plugins/board_check.lua mode=expect ply=2" --no-output)
 
+# Every other return form carries the cursor through `deflt` too, so each must
+# reach the next plugin still at ply 2. The return_* cases above only count the
+# values that survive, which would not notice a cursor reset on these paths.
+tt_case(board_cursor_via_pass -f fixtures/scholars.pgn -p "plugins/board_check.lua mode=set" -p "plugins/return_modes.lua mode=pass" -p "plugins/board_check.lua mode=expect ply=2" --no-output)
+tt_case(board_cursor_via_true -f fixtures/scholars.pgn -p "plugins/board_check.lua mode=set" -p "plugins/return_modes.lua mode=true" -p "plugins/board_check.lua mode=expect ply=2" --no-output)
+tt_case(board_cursor_via_board -f fixtures/scholars.pgn -p "plugins/board_check.lua mode=set" -p "plugins/return_modes.lua mode=board" -p "plugins/board_check.lua mode=expect ply=2" --no-output)
+tt_case(board_cursor_via_table_pass -f fixtures/scholars.pgn -p "plugins/board_check.lua mode=set" -p "plugins/return_modes.lua mode=table_pass" -p "plugins/board_check.lua mode=expect ply=2" --no-output)
+
+# A fan-out applies the incoming value to each element separately, so both
+# branches must inherit the cursor: the expect below runs once per element.
+tt_case(board_cursor_via_fanout -f fixtures/scholars.pgn -p "plugins/board_check.lua mode=set" -p "plugins/return_modes.lua mode=fanout2" -p "plugins/board_check.lua mode=expect ply=2" --no-output)
+
 # Regression: ctx.args:number() yields a float, and game:board must accept an
 # integral one (ply=2 above) but reject a fractional one.
 tt_error(board_frac_ply "'ply' must be a whole number" -f fixtures/scholars.pgn -p "plugins/board_check.lua mode=expect ply=1.5" --no-output)
