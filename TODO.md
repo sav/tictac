@@ -85,7 +85,7 @@ thread blocking on a single read.
   `--engine-option NAME=VALUE` (repeatable, feeds `setoption`), `--multipv`, and the
   mutually-exclusive `--eval-depth`/`--eval-movetime`/`--eval-nodes`; without `--engine`
   behavior is unchanged. A process pool over a shared FEN queue is a natural extension.
-  (Explored in the dropped PR #2 on branch `claude/uci-engine-adapter`, against a since
+  (Explored in the dropped PR #2 on branch `sav/old//uci-engine-adapter`, against a since
   -drifted `uci::UciEngine`/reproc++ design; re-implement over the current `Engine`.)
 
 ## Plugins

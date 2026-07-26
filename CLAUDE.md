@@ -79,7 +79,7 @@ produced by an LLM.
   -- never impose a generic format the project doesn't use.
 
 - Never use the `Co-Authored-By` tag in commits. Use `Assisted-By: <Model>` instead.
-- Name branches as `claude/<branch>`, typically after the feature.
+- Name branches as `<user>/<branch>`, typically after the feature or task (eg: `sav/some_task`).
 - After addressing review comments, commit the changes as a fixup and push to
   the remote branch.
 
