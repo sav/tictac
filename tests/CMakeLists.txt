@@ -108,6 +108,17 @@ tt_case(scope_per_plugin -f fixtures/three_games.pgn -p "plugins/scope_count.lua
 # ctx.shared: global across plugins and games. Two instances over 3 games -> 6.
 tt_case(shared_global -f fixtures/three_games.pgn -p plugins/shared_inc.lua -p "plugins/shared_inc.lua expect=6" --no-output)
 
+# input.board: the cursor starts at the game's first position, not its last, and
+# a plugin that hands one along reaches the next plugin at that same position --
+# including through a bare-Game return, which must not re-derive the cursor.
+tt_case(board_cursor_start -f fixtures/scholars.pgn -p "plugins/board_check.lua mode=start" --no-output)
+tt_case(board_cursor_handoff -f fixtures/scholars.pgn -p "plugins/board_check.lua mode=set" -p "plugins/board_check.lua mode=expect ply=2" --no-output)
+tt_case(board_cursor_kept -f fixtures/scholars.pgn -p "plugins/board_check.lua mode=set" -p "plugins/board_check.lua mode=forward_game" -p "plugins/board_check.lua mode=expect ply=2" --no-output)
+
+# Regression: ctx.args:number() yields a float, and game:board must accept an
+# integral one (ply=2 above) but reject a fractional one.
+tt_error(board_frac_ply "'ply' must be a whole number" -f fixtures/scholars.pgn -p "plugins/board_check.lua mode=expect ply=1.5" --no-output)
+
 # --- API smoke test -------------------------------------------------------------
 
 tt_case(api_smoke -f fixtures/scholars.pgn -p plugins/api_smoke.lua --no-output)
