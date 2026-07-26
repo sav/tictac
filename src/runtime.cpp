@@ -93,16 +93,29 @@ sol::table analysisToTable(sol::state_view lua, Analysis const &a) {
 }
 
 // A Lua number always reaches C++ as a double -- ctx.args:number() yields one,
-// and even an integer literal converts -- so read the integer limits as doubles
-// and accept any whole value, rejecting a fractional one rather than letting
-// sol2 refuse the float outright.
+// and even an integer literal converts -- so whole-number values are read as
+// doubles and validated here, rejecting a fractional one rather than letting
+// sol2 refuse the float outright. `prefix` namespaces the message (e.g.
+// "engine: ") when the caller wants it.
+template <typename Int>
+Int requireWhole(double value, char const *name, char const *prefix = "") {
+    if (value != std::trunc(value))
+        throw std::runtime_error(std::format("{}'{}' must be a whole number", prefix, name));
+    return static_cast<Int>(value);
+}
+
+// A whole-number call argument; absent falls back to the default.
+int readIntArg(sol::optional<double> value, int deflt, char const *name) {
+    if (!value) return deflt;
+    return requireWhole<int>(*value, name);
+}
+
+// A whole-number engine limit read from `table` by key; absent is an error.
 template <typename Int>
 Int readIntLimit(sol::table const &table, char const *key) {
     sol::optional<double> const value = table.get<sol::optional<double>>(key);
     if (!value) throw std::runtime_error(std::format("engine: '{}' must be a number", key));
-    if (*value != std::trunc(*value))
-        throw std::runtime_error(std::format("engine: '{}' must be a whole number", key));
-    return static_cast<Int>(*value);
+    return requireWhole<Int>(*value, key, "engine: ");
 }
 
 AnalysisLimits readLimits(sol::table const &table) {
@@ -386,9 +399,11 @@ void registerBoard(sol::state_view lua) {
             return reason == chess::GameResultReason::STALEMATE;
         },
         "isInsufficientMaterial", [](LuaBoard &b) { return b.board.isInsufficientMaterial(); },
-        "isRepetition", [](LuaBoard &b, sol::optional<int> count) { return b.board.isRepetition(count.value_or(2)); },
+        "isRepetition", [](LuaBoard &b, sol::optional<double> count) { return b.board.isRepetition(readIntArg(count, 2, "count")); },
         "phase",
-        [](LuaBoard &b, sol::optional<int> openingMoves, sol::optional<int> endgameThreshold) {
+        [](LuaBoard &b, sol::optional<double> openingMoves, sol::optional<double> endgameThreshold) {
+            int const opening = readIntArg(openingMoves, 10, "openingMoves");
+            int const endgame = readIntArg(endgameThreshold, 1300, "endgameThreshold");
             int total = 0;
             for (int i = 0; i < 64; ++i) {
                 chess::Piece p = b.board.at(chess::Square(i));
@@ -396,8 +411,8 @@ void registerBoard(sol::state_view lua) {
                 if (p.type() == chess::PieceType::PAWN || p.type() == chess::PieceType::KING) continue;
                 total += pieceValue(p.type());
             }
-            if (static_cast<int>(b.board.fullMoveNumber()) <= openingMoves.value_or(10)) return std::string("opening");
-            if (total <= endgameThreshold.value_or(1300)) return std::string("endgame");
+            if (static_cast<int>(b.board.fullMoveNumber()) <= opening) return std::string("opening");
+            if (total <= endgame) return std::string("endgame");
             return std::string("middlegame");
         },
         "material", [](LuaBoard &b, sol::this_state ts) {
@@ -415,15 +430,6 @@ void registerBoard(sol::state_view lua) {
             return table;
         }
     );
-}
-
-// A ply argument arrives as a double for the same reason an engine limit does
-// (see readIntLimit): sol2 would refuse to bind the float ctx.args:number()
-// yields to an int parameter, and silently fall back to the default ply.
-int readPly(sol::optional<double> ply) {
-    if (!ply) return 0;
-    if (*ply != std::trunc(*ply)) throw std::runtime_error("game:board: 'ply' must be a whole number");
-    return static_cast<int>(*ply);
 }
 
 void registerGame(sol::state_view lua) {
@@ -453,7 +459,7 @@ void registerGame(sol::state_view lua) {
             return sol::as_table(out);
         },
         "startBoard", [](LuaGame &g) { return LuaBoard{g.g->startBoard()}; },
-        "board", [](LuaGame &g, sol::optional<double> ply) { return LuaBoard{g.g->boardAt(readPly(ply))}; },
+        "board", [](LuaGame &g, sol::optional<double> ply) { return LuaBoard{g.g->boardAt(readIntArg(ply, 0, "ply"))}; },
         // Returns a single-use iterator: idx and the running board live in the
         // closure (so the walk stays linear rather than replaying from the start
         // each step), and game is captured by shared_ptr because the iterator
