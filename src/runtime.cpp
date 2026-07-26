@@ -417,6 +417,15 @@ void registerBoard(sol::state_view lua) {
     );
 }
 
+// A ply argument arrives as a double for the same reason an engine limit does
+// (see readIntLimit): sol2 would refuse to bind the float ctx.args:number()
+// yields to an int parameter, and silently fall back to the default ply.
+int readPly(sol::optional<double> ply) {
+    if (!ply) return 0;
+    if (*ply != std::trunc(*ply)) throw std::runtime_error("game:board: 'ply' must be a whole number");
+    return static_cast<int>(*ply);
+}
+
 void registerGame(sol::state_view lua) {
     lua.new_usertype<LuaGame>(
         "Game", sol::no_constructor,
@@ -444,7 +453,7 @@ void registerGame(sol::state_view lua) {
             return sol::as_table(out);
         },
         "startBoard", [](LuaGame &g) { return LuaBoard{g.g->startBoard()}; },
-        "board", [](LuaGame &g, sol::optional<int> ply) { return LuaBoard{g.g->boardAt(ply.value_or(-1))}; },
+        "board", [](LuaGame &g, sol::optional<double> ply) { return LuaBoard{g.g->boardAt(readPly(ply))}; },
         // Returns a single-use iterator: idx and the running board live in the
         // closure (so the walk stays linear rather than replaying from the start
         // each step), and game is captured by shared_ptr because the iterator
@@ -850,9 +859,9 @@ ProcessResult interpret(sol::object ret, PluginValue const &deflt) {
     }
     case sol::type::userdata: {
         if (ret.is<LuaGame>()) {
-            std::shared_ptr<Game> game = ret.as<LuaGame>().g;
-            value.game = game;
-            value.board = game->boardAt(-1);
+            // The board cursor is left as it was, so `return game` behaves the
+            // same as `return { game = game }`.
+            value.game = ret.as<LuaGame>().g;
         } else if (ret.is<LuaBoard>()) {
             value.board = ret.as<LuaBoard>().board;
         } else goto err;
@@ -888,7 +897,7 @@ bool Runtime::processGame(std::shared_ptr<Game> const &game, std::size_t index) 
     // The values threaded through the plugin chain: starts as just the game,
     // and each plugin's process() can replace, drop, or fan it out before the
     // next plugin sees it.
-    std::vector<PluginValue> values = {{game, game->boardAt(-1), sol::object{}}};
+    std::vector<PluginValue> values = {{game, game->startBoard(), sol::object{}}};
 
     for (auto &plugin : plugins_) {
         if (values.empty()) break;

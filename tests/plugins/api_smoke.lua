@@ -45,8 +45,13 @@ function plugin.process(input, ctx)
   assert(moves[1]:uci() == "e2e4", "move 1 uci: " .. tostring(moves[1]:uci()))
   assert(moves[1]:from() == "e2" and moves[1]:to() == "e4", "move 1 from/to")
 
-  -- The final position (the default board cursor) is checkmate.
-  assert(input.board:isCheckmate(), "final position must be checkmate")
+  -- The default board cursor is the first position, not the last.
+  assert(input.board:fen() == start:fen(), "cursor fen: " .. input.board:fen())
+  assert(input.board:sideToMove() == "white", "cursor sideToMove")
+  assert(g:board():fen() == start:fen(), "board() must default to ply 0")
+
+  -- The final position, which a negative ply asks for, is checkmate.
+  assert(g:board(-1):isCheckmate(), "final position must be checkmate")
 
   return input
 end

@@ -126,7 +126,7 @@ after `finish`.
 | Field | Type | Description |
 |-------|------|-------------|
 | `input.game` | [`Game`](#game) | The game being processed. |
-| `input.board` | [`Board`](#board) | The "current" position cursor. For the first plugin it defaults to the game's **final position**. Downstream plugins receive whatever the previous plugin forwarded. |
+| `input.board` | [`Board`](#board) | The "current" position cursor. For the first plugin it defaults to the game's **first position** (the `[FEN]` header's position, or the standard array). Downstream plugins receive whatever the previous plugin forwarded, at the exact position it was forwarded at. |
 | `input.data` | any | Arbitrary Lua value passed from the previous plugin. `nil` for the first plugin. |
 
 ### Output
@@ -175,6 +175,7 @@ To keep simple plugins terse:
 | `return input` or `return true` | `{ action = "pass" }` -- pass through unchanged. |
 | `return false` or `return` (nil) | `{ action = "drop" }` -- drop the game. |
 | `return board` (a Board) | pass, with `board` forwarded as the new cursor. |
+| `return game` (a Game) | pass, with `game` forwarded; the board cursor is left as it was. |
 
 ### Fan-out (one game → many)
 
@@ -322,7 +323,7 @@ game:result()                    -- "1-0" | "0-1" | "1/2-1/2" | "*"
 game:moveCount()                 -- number of plies in the mainline
 game:moves()                     -- array of Move (mainline)
 game:startBoard()                -- Board at the initial position (respects FEN header)
-game:board(ply?)                 -- Board after `ply` half-moves (default: final position)
+game:board(ply?)                 -- Board after `ply` half-moves (default: 0, initial; negative: final)
 
 -- Iterate the mainline. Each node: { ply, move, board_before, board_after, board }
 for node in game:positions() do
@@ -472,12 +473,13 @@ local b = game:startBoard()          -- Board before move 1
 ```
 
 **`game:board(ply?)`**: The position after a given number of half-moves.
-*Returns* a [`Board`](#board). `ply` is 0-based (0 = start position); omitted or
-negative yields the **final** position.
+*Returns* a [`Board`](#board). `ply` is 0-based and defaults to 0, the **start**
+position; a negative `ply` yields the **final** position, and a fractional one is
+an error. A `ply` past the end of the mainline clamps to the final position.
 
 ```lua
 local mid   = game:board(20)         -- after 20 plies
-local final = game:board()           -- final position
+local final = game:board(-1)         -- final position
 ```
 
 **`game:positions()`**: Iterate the mainline position by position.
@@ -906,7 +908,7 @@ the plugin's own routine over `board:pieces()`.
 
 ```lua
 function plugin.process(input, ctx)
-  local b = input.game:board()                 -- final position
+  local b = input.game:board(-1)               -- final position
   if b:phase() == "endgame" then
     input.game:setHeader("Endgame", classify(b:pieces()))
   end
