@@ -62,7 +62,6 @@ struct PluginInstance {
     std::shared_ptr<Args> args;
     std::string name;
     std::unordered_map<std::string, std::shared_ptr<Engine>> engines; // one subprocess per path
-    std::vector<std::shared_ptr<Writer>> managed;                     // keeps ctx.open() writers alive
 };
 
 // One element of the pipeline value as it travels between plugins.
@@ -91,6 +90,7 @@ private:
     sol::state lua_;
     std::vector<std::unique_ptr<PluginInstance>> plugins_;
     std::shared_ptr<Writer> out_;
+    WriterRegistry writers_; // ctx.open() sinks, one per path for the whole run
     std::size_t current_index_ = 0;
 };
 

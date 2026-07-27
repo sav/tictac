@@ -220,7 +220,7 @@ It is how a plugin talks to tictac.
 | `ctx.scope` | A table private to **this** plugin instance -- its own scratch space, persisting across hooks. |
 | `ctx.index` | 1-based index of the current game in the database (valid in `process`). |
 | `ctx.engine(path, opts)` | Create / fetch a [UCI engine](#engine) handle (managed & auto-closed). |
-| `ctx.open(path, mode?)` | Open a [Writer](#writer) (managed & auto-closed). `mode`: `"w"` (default, truncates) / `"a"` (append); any other value is an error. Reopening the same path truncates -- use `"a"` to append. |
+| `ctx.open(path, mode?)` | Open a [Writer](#writer) (managed & auto-closed). `mode`: `"w"` (default, truncates) / `"a"` (append); any other value is an error. A path already open hands back **the same writer** instead of truncating it, so two plugins can share one file; reopening it with the *other* mode is an error. |
 | `ctx.out` | The default output [Writer](#writer) (honours `--output`); **`nil` under `--no-output`**, so guard with `if ctx.out then`. Write to it mid-pipeline with `ctx.out:writeGame(game)`. |
 | `ctx.log` | `ctx.log.info/warn/error/debug(fmt, ...)` -- structured logging prefixed with plugin + game index. |
 

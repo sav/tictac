@@ -229,8 +229,12 @@ Runtime::Runtime(RunOptions opts) : opts_(std::move(opts)) {
 		sol::lib::package
     );
     // clang-format on
-    if (!opts_.noOutput)
+    if (!opts_.noOutput) {
         out_ = opts_.output == "-" ? std::make_shared<Writer>() : std::make_shared<Writer>(opts_.output);
+        // So a plugin that opens the --output path writes to the same stream the
+        // runtime emits games on, instead of a second one truncating it.
+        if (opts_.output != "-") writers_.adopt(opts_.output, out_);
+    }
     registerTypes();
     loadPlugins();
 }
@@ -673,15 +677,13 @@ sol::table Runtime::buildCtx(PluginInstance &plugin) {
         self->engines[path] = eng;
         return eng;
     };
-    ctx["open"] = [self](std::string const &path, sol::optional<std::string> mode) {
+    ctx["open"] = [registry = &writers_](std::string const &path, sol::optional<std::string> mode) {
         // Reject anything but "w"/"a": silently truncating on a mode typo would
         // destroy the file the plugin meant to append to.
         std::string const m = mode.value_or("w");
         if (m != "w" && m != "a")
             throw std::runtime_error("open: mode must be 'w' or 'a', got '" + m + "'");
-        auto w = std::make_shared<Writer>(path, m == "a");
-        self->managed.push_back(w);
-        return w;
+        return registry->open(path, m == "a");
     };
 
     std::string const name = plugin.name;

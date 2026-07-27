@@ -15,6 +15,7 @@
 #include <print>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 
 namespace tictac {
 
@@ -57,6 +58,29 @@ private:
     std::mutex mu_;
     std::ofstream file_;            // closed (and flushed) on destruction
     std::ostream *os_ = &std::cout; // borrows file_ when open, else std::cout
+};
+
+// The ctx.open() writers, one per path for the whole run. Two plugins -- or two
+// workers running the same plugin -- that open the same file get the same
+// Writer, so their records interleave cleanly instead of two ofstreams fighting
+// over one path and truncating each other.
+class WriterRegistry {
+public:
+    // Throws when `path` was already opened with the other mode.
+    [[nodiscard]] std::shared_ptr<Writer> open(std::string const &path, bool append);
+
+    // Adopt an already-open writer, so a plugin opening the --output file gets
+    // the stream the runtime is already writing games to.
+    void adopt(std::string const &path, std::shared_ptr<Writer> writer);
+
+private:
+    struct Entry {
+        std::shared_ptr<Writer> writer;
+        bool append = false;
+    };
+
+    std::mutex mu_;
+    std::unordered_map<std::string, Entry> writers_;
 };
 
 } // namespace tictac

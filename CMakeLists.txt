@@ -71,6 +71,7 @@ add_executable(tictac
   src/app.cpp
   src/game.cpp
   src/engine.cpp
+  src/writer.cpp
   src/runtime.cpp
 )
 target_compile_definitions(tictac PRIVATE

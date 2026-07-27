@@ -237,13 +237,15 @@ tt_case(ex_dedup    -f fixtures/dup_games.pgn   -p "${PLUGINS}/dedup.lua"       
 tt_error(ex_position_requires_fen "missing required argument: fen" -f fixtures/three_games.pgn -p "${PLUGINS}/position.lua" --no-output)
 
 # File-producing examples: compare the produced file byte for byte. PLUGIN is one
-# argument carrying a spec with spaces, so its path is absolute.
+# argument carrying a spec with spaces, so its path is absolute. An extra
+# argument adds a second pipeline stage, for cases that need two plugins.
 function(tt_produces name fixture plugin produced expected)
   add_test(NAME ${name}
     COMMAND ${CMAKE_COMMAND}
       -DTICTAC=$<TARGET_FILE:tictac>
       -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/${fixture}
       -DPLUGIN=${plugin}
+      -DPLUGIN2=${ARGN}
       -DPRODUCED=${produced}
       -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/expected/${expected}
       -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/${name}
@@ -253,6 +255,12 @@ endfunction()
 tt_produces(ex_csv       three_games.pgn "${PLUGINS}/csv.lua out=ex_csv.csv"                        ex_csv.csv       ex_csv.csv)
 tt_produces(ex_histogram three_games.pgn "${PLUGINS}/histogram.lua by=Result out=ex_histogram.txt" ex_histogram.txt ex_histogram.txt)
 tt_produces(ex_split     three_games.pgn "${PLUGINS}/split.lua by=Result"                          1_0.pgn          ex_split_1_0.pgn)
+
+# ctx.open on a path another stage already opened hands back the same writer, so
+# both stages' lines survive instead of the second open truncating the first.
+tt_produces(open_same_path three_games.pgn
+  "${CMAKE_CURRENT_SOURCE_DIR}/plugins/emit_line.lua out=shared.txt tag=a" shared.txt open_same_path.txt
+  "${CMAKE_CURRENT_SOURCE_DIR}/plugins/emit_line.lua out=shared.txt tag=b")
 
 # Engine examples, driven against the mock. A constant eval never swings, so
 # blunder tags nothing and passes every game.
