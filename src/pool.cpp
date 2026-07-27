@@ -11,8 +11,7 @@
 
 namespace tictac {
 
-GamePool::GamePool(std::vector<std::unique_ptr<Pipeline>> const &pipelines)
-    : capacity_(pipelines.size()) {
+GamePool::GamePool(std::vector<std::unique_ptr<Pipeline>> const &pipelines) : capacity_(pipelines.size()) {
     workers_.reserve(pipelines.size());
     for (auto const &pipeline : pipelines)
         workers_.emplace_back([this, p = pipeline.get()](std::stop_token stop) { work(stop, *p); });

@@ -56,7 +56,7 @@ Runtime::Runtime(RunOptions opts) : opts_(std::move(opts)) {
     // several threads at once would race.
     pipelines_.reserve(opts_.jobs);
     for (std::size_t i = 0; i < opts_.jobs; ++i)
-        pipelines_.push_back(std::make_unique<Pipeline>(opts_, out_, writers_));
+        pipelines_.push_back(std::make_unique<Pipeline>(opts_, out_, writers_, i + 1, opts_.jobs));
 }
 
 int Runtime::run() {
