@@ -89,6 +89,17 @@ target_include_directories(tictac SYSTEM PRIVATE
   ${sol2_SOURCE_DIR}/include
 )
 
+# Opt-in sanitizers. ThreadSanitizer is the one that matters here: the worker
+# pool, the writer mutex and the writer registry are what it is meant to check.
+# Needs the compiler's sanitizer runtime installed (libclang-rt-<v>-dev on
+# Debian/Ubuntu for Clang).
+set(TICTAC_SANITIZER "" CACHE STRING "Sanitizer to build with: thread | address | undefined")
+set_property(CACHE TICTAC_SANITIZER PROPERTY STRINGS "" thread address undefined "address,undefined")
+if(TICTAC_SANITIZER)
+  target_compile_options(tictac PRIVATE -fsanitize=${TICTAC_SANITIZER} -fno-omit-frame-pointer -g)
+  target_link_options(tictac PRIVATE -fsanitize=${TICTAC_SANITIZER})
+endif()
+
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(tictac PRIVATE -Wall -Wextra -Wpedantic -Wshadow
   -Wnon-virtual-dtor -Woverloaded-virtual -Wformat=2 -Wimplicit-fallthrough
