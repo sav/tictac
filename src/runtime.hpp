@@ -1,61 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Savio Sena <savio.sena@gmail.com>
 //
-// Lua plugin runtime and pipeline: bound types and the Runtime interface.
+// The run: reads the databases and drives the games through the pipelines.
 
 #pragma once
 
-#include "engine.hpp"
-#include "game.hpp"
 #include "options.hpp"
+#include "pipeline.hpp"
 #include "writer.hpp"
 
 #include <memory>
-#include <string>
-#include <unordered_map>
-#include <utility>
 #include <vector>
 
-#include <sol/sol.hpp>
-
 namespace tictac {
-
-// A plugin's parsed CLI arguments with typed accessors.
-struct Args {
-    std::vector<std::pair<std::string, std::string>> values;
-};
-
-// Lua-facing wrappers over the engine's board/move/game types.
-struct LuaGame {
-    std::shared_ptr<Game> g;
-};
-
-struct LuaBoard {
-    chess::Board board;
-};
-
-struct LuaMove {
-    chess::Move move;
-    chess::Board before;        // position before the move (for SAN/piece/etc.)
-    std::shared_ptr<Game> game; // keeps mainline moves alive; null for ad-hoc moves
-    int ply = -1;               // index into game->moves; -1 if not a mainline move
-};
-
-// A loaded plugin and its private execution context.
-struct PluginInstance {
-    sol::table table;
-    sol::table ctx;
-    std::shared_ptr<Args> args;
-    std::string name;
-    std::unordered_map<std::string, std::shared_ptr<Engine>> engines; // one subprocess per path
-};
-
-// One element of the pipeline value as it travels between plugins.
-struct PluginValue {
-    std::shared_ptr<Game> game;
-    chess::Board board;
-    sol::object data;
-};
 
 class Runtime {
 public:
@@ -63,21 +20,13 @@ public:
     int run();
 
 private:
-    void registerTypes();
-    void loadPlugins();
-
-    sol::table buildCtx(PluginInstance &plugin);
-
-    // Run one game through the whole pipeline; returns true if a plugin asked to stop
-    // reading the database (via a "stop" or "abort" action).
-    bool processGame(std::shared_ptr<Game> const &game, std::size_t index);
-
+    // opts_ backs the reference every pipeline holds, and the pipelines are
+    // torn down before out_ and writers_ close their files, so the declaration
+    // order here is load-bearing.
     RunOptions opts_;
-    sol::state lua_;
-    std::vector<std::unique_ptr<PluginInstance>> plugins_;
-    std::shared_ptr<Writer> out_;
-    WriterRegistry writers_; // ctx.open() sinks, one per path for the whole run
-    std::size_t current_index_ = 0;
+    std::shared_ptr<Writer> out_; // the default game stream; null under --no-output
+    WriterRegistry writers_;      // ctx.open() sinks, one per path for the whole run
+    std::vector<std::unique_ptr<Pipeline>> pipelines_;
 };
 
 } // namespace tictac

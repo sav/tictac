@@ -72,7 +72,7 @@ private:
 
 Engine::Engine(std::string const &path, std::unordered_map<std::string, std::string> const &options) {
     ignoreSigPipeOnce();
-    ExecError exec_error(path); // built here: the child cannot format anything itself
+    ExecError exec_error(path);    // built here: the child cannot format anything itself
     std::array<int, 2> in_pipe{};  // parent -> child stdin
     std::array<int, 2> out_pipe{}; // child stdout -> parent
     // O_CLOEXEC so a later engine's child does not inherit these fds; otherwise it

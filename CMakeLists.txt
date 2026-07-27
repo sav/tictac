@@ -73,6 +73,7 @@ add_executable(tictac
   src/engine.cpp
   src/options.cpp
   src/writer.cpp
+  src/pipeline.cpp
   src/runtime.cpp
 )
 target_compile_definitions(tictac PRIVATE
