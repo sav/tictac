@@ -6,10 +6,12 @@
 #include "app.hpp"
 #include "runtime.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <optional>
 #include <print>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <CLI/CLI.hpp>
@@ -46,6 +48,10 @@ namespace {
     app.add_option("--on-error", on_error, "On plugin error: abort | drop | pass")
         ->check(CLI::IsMember({"abort", "drop", "pass"}));
 
+    unsigned jobs = 1;
+    app.add_option("-j,--jobs", jobs, "Games to process in parallel (0 = one per CPU; default 1)")
+        ->check(CLI::Range(0U, 1024U));
+
     try {
         app.parse(argc, argv);
     } catch (CLI::ParseError const &e) {
@@ -58,6 +64,7 @@ namespace {
     if (on_error == "pass") opts.onError = OnError::Pass;
     else if (on_error == "drop") opts.onError = OnError::Drop;
     else opts.onError = OnError::Abort;
+    opts.jobs = jobs == 0 ? std::max(1U, std::thread::hardware_concurrency()) : jobs;
 
     for (auto const &spec : plugin_specs) opts.plugins.push_back(parsePluginSpec(spec));
     return std::nullopt;

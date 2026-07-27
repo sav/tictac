@@ -5,6 +5,9 @@
 -- header, in order: `expect=Alice,Erin`. A plain count cannot tell "the right
 -- game was dropped" from "a different one was", which is what the parse-error
 -- recovery tests need to pin down. expect= may be empty, meaning no games.
+--
+-- Only meaningful at -j1: with more workers each gets its own ctx.scope and
+-- sees only its own share of the games, in completion order.
 
 local plugin = {}
 

@@ -1,24 +1,100 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Savio Sena <savio.sena@gmail.com>
 //
-// Lua plugin runtime and pipeline: sol2 bindings and pipeline execution.
+// Lua plugin runtime: writer registry, spec parsing, sol2 bindings, chain
+// execution and the run itself.
 
 #include "runtime.hpp"
+
+#include "game.hpp"
+#include "pool.hpp"
 
 #include <algorithm>
 #include <array>
 #include <charconv>
 #include <cmath>
 #include <cstdio>
+#include <exception>
 #include <filesystem>
 #include <format>
+#include <fstream>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <print>
 #include <sstream>
 #include <stdexcept>
+#include <string>
+#include <system_error>
+#include <utility>
 
 namespace tictac {
+
+namespace {
+
+namespace detail {
+
+// weakly_canonical resolves the part of the path that exists and normalizes the
+// rest, so it also keys a file ctx.open is about to create -- which is the
+// common case. It runs on an absolute path because libstdc++ hands a relative
+// one straight back when none of its tail exists, which would key the same file
+// differently before and after the first open created it. Best effort: a hard
+// link, or a symlink made mid-run, still aliases two keys onto one file.
+std::string canonicalKey(std::string const &path) {
+    std::error_code ec;
+    std::filesystem::path const full = std::filesystem::absolute(path, ec);
+    if (ec) return std::filesystem::path(path).lexically_normal().string();
+    std::filesystem::path const resolved = std::filesystem::weakly_canonical(full, ec);
+    if (ec) return full.lexically_normal().string();
+    return resolved.string();
+}
+
+} // namespace detail
+
+} // namespace
+
+std::shared_ptr<Writer> WriterRegistry::open(std::string const &path, bool append) {
+    std::string key = detail::canonicalKey(path);
+    std::scoped_lock const lock(mu_);
+    auto const it = writers_.find(key);
+    if (it != writers_.end()) {
+        // The first open already decided whether the file was truncated, so a
+        // second one in the other mode cannot be honoured either way: whichever
+        // plugin guessed wrong would silently lose what it wrote.
+        if (it->second.append != append)
+            throw std::runtime_error(
+                "open: '" + path + "' is already open with mode '" + (it->second.append ? "a" : "w") + "'"
+            );
+        return it->second.writer;
+    }
+    auto writer = std::make_shared<Writer>(path, append);
+    writers_.emplace(std::move(key), Entry{writer, append});
+    return writer;
+}
+
+void WriterRegistry::adopt(std::string const &path, std::shared_ptr<Writer> writer) {
+    std::string key = detail::canonicalKey(path);
+    std::scoped_lock const lock(mu_);
+    writers_.insert_or_assign(std::move(key), Entry{std::move(writer), false});
+}
+
+PluginSpec parsePluginSpec(std::string const &spec) {
+    PluginSpec plugin;
+    std::istringstream iss(spec);
+    for (std::string tok; iss >> tok;) {
+        if (plugin.path.empty()) {
+            plugin.path = tok;
+            continue;
+        }
+        // Whitespace tokenization means a value cannot contain a space. A bare
+        // token becomes "true", and a repeated key is kept, not overwritten.
+        auto eq = tok.find('=');
+        if (eq == std::string::npos) plugin.args.emplace_back(tok, "true");
+        else plugin.args.emplace_back(tok.substr(0, eq), tok.substr(eq + 1));
+    }
+    if (plugin.path.empty()) throw std::runtime_error("empty plugin spec");
+    return plugin;
+}
 
 namespace {
 
@@ -197,27 +273,18 @@ sol::object scalarOrArrayChecked(
     return out;
 }
 
-// Opening the output truncates it, and that happens before run() reads any
-// input, so an --output that names an --file would destroy the database before
-// it is parsed. Refuse instead.
-void rejectOutputOverInput(RunOptions const &opts) {
-    if (opts.noOutput || opts.output == "-") return;
-    std::error_code ec;
-    for (auto const &file : opts.files) {
-        if (file == "-") continue;
-        // equivalent() fails when the output does not exist yet, which is the
-        // common case and is not a collision.
-        if (std::filesystem::equivalent(file, opts.output, ec))
-            throw std::runtime_error("refusing to write output over input file: " + file);
-    }
-}
-
 } // namespace detail
 
 } // namespace
 
-Runtime::Runtime(RunOptions opts) : opts_(std::move(opts)) {
-    detail::rejectOutputOverInput(opts_);
+Pipeline::Pipeline(
+    RunOptions const &opts,
+    std::shared_ptr<Writer> out,
+    WriterRegistry &writers,
+    std::size_t worker,
+    std::size_t workers
+)
+    : opts_(opts), out_(std::move(out)), writers_(writers), worker_(worker), workers_(workers) {
     // clang-format off
     lua_.open_libraries(
 		sol::lib::base,
@@ -229,61 +296,43 @@ Runtime::Runtime(RunOptions opts) : opts_(std::move(opts)) {
 		sol::lib::package
     );
     // clang-format on
-    shared_ = lua_.create_table();
-    if (!opts_.noOutput)
-        out_ = opts_.output == "-" ? std::make_shared<Writer>() : std::make_shared<Writer>(opts_.output);
     registerTypes();
     loadPlugins();
 }
 
-int Runtime::run() {
-    // Call init() for every plugin.
+bool Pipeline::init() {
     for (auto &plugin : plugins_) {
         sol::optional<sol::protected_function> init = plugin->table["init"];
-        if (init) {
-            sol::protected_function_result r = (*init)(plugin->ctx);
-            if (!r.valid()) {
-                sol::error err = r;
-                std::println(stderr, "error: init of '{}': {}", plugin->name, err.what());
-                return 1; // init failure means the plugin can't run; always abort, regardless
-                          // of --on-error
-            }
+        if (!init) continue;
+        sol::protected_function_result r = (*init)(plugin->ctx);
+        if (!r.valid()) {
+            sol::error err = r;
+            std::println(stderr, "error: init of '{}': {}", plugin->name, err.what());
+            return false; // init failure means the plugin can't run; always abort,
+                          // regardless of --on-error
         }
     }
-    std::size_t index = 0;
-    bool aborted = false;
-    for (auto const &file : opts_.files) {
-        if (aborted) break;
-        std::ifstream in(file);
-        if (!in) {
-            std::println(stderr, "error: cannot open file: {}", file);
-            return 1;
-        }
-        // Games stream through the pipeline one at a time: the parser hands over
-        // each game as it completes, so a database never sits in memory whole.
-        parseGames(in, [&](std::shared_ptr<Game> const &game) {
-            ++index;
-            current_index_ = index;
-            if (processGame(game, index)) aborted = true;
-            return !aborted;
-        });
-    }
+    return true;
+}
+
+void Pipeline::finish() {
     // Call finish() in pipeline order. Unlike init(), a failure is only reported:
     // the games are already emitted, and one bad plugin must not skip the rest.
     for (auto &plugin : plugins_) {
         sol::optional<sol::protected_function> finish = plugin->table["finish"];
-        if (finish) {
-            sol::protected_function_result r = (*finish)(plugin->ctx);
-            if (!r.valid()) {
-                sol::error err = r;
-                std::println(stderr, "error: finish of '{}': {}", plugin->name, err.what());
-            }
+        if (!finish) continue;
+        sol::protected_function_result r = (*finish)(plugin->ctx);
+        if (!r.valid()) {
+            sol::error err = r;
+            std::println(stderr, "error: finish of '{}': {}", plugin->name, err.what());
         }
     }
-    // Drop the runtime's cached engine handles; ~Engine quits and reaps each
-    // subprocess once its last reference (the Lua-held copy included) is gone.
+}
+
+void Pipeline::closeEngines() {
+    // ~Engine quits and reaps each subprocess once its last reference (the
+    // Lua-held copy included) is gone.
     for (auto &plugin : plugins_) plugin->engines.clear();
-    return 0;
 }
 
 namespace {
@@ -617,7 +666,7 @@ void registerArgs(sol::state_view lua) {
 
 } // namespace
 
-void Runtime::registerTypes() {
+void Pipeline::registerTypes() {
     detail::registerMove(lua_);
     detail::registerBoard(lua_);
     detail::registerGame(lua_);
@@ -626,7 +675,7 @@ void Runtime::registerTypes() {
     detail::registerArgs(lua_);
 }
 
-void Runtime::loadPlugins() {
+void Pipeline::loadPlugins() {
     for (auto const &spec : opts_.plugins) {
         sol::protected_function_result loaded = lua_.safe_script_file(spec.path, sol::script_pass_on_error);
         if (!loaded.valid())
@@ -655,15 +704,18 @@ void Runtime::loadPlugins() {
     }
 }
 
-sol::table Runtime::buildCtx(PluginInstance &plugin) {
+sol::table Pipeline::buildCtx(PluginInstance &plugin) {
     PluginInstance *self = &plugin;
     sol::state_view lua = lua_;
     sol::table ctx = lua.create_table();
 
     ctx["args"] = plugin.args;
-    ctx["shared"] = shared_;           // one table for every plugin
     ctx["scope"] = lua.create_table(); // fresh per plugin, so keys cannot collide
     ctx["out"] = out_;
+    // Which of the --jobs workers this pipeline is, so a plugin sharing an
+    // output file can emit a one-off header from worker 1 alone.
+    ctx["worker"] = worker_;
+    ctx["workers"] = workers_;
     ctx["engine"] = [self](std::string const &path, sol::optional<sol::table> opts) {
         auto it = self->engines.find(path);
         if (it != self->engines.end()) return it->second;
@@ -675,21 +727,20 @@ sol::table Runtime::buildCtx(PluginInstance &plugin) {
         self->engines[path] = eng;
         return eng;
     };
-    ctx["open"] = [self](std::string const &path, sol::optional<std::string> mode) {
+    ctx["open"] = [registry = &writers_](std::string const &path, sol::optional<std::string> mode) {
         // Reject anything but "w"/"a": silently truncating on a mode typo would
         // destroy the file the plugin meant to append to.
         std::string const m = mode.value_or("w");
         if (m != "w" && m != "a")
             throw std::runtime_error("open: mode must be 'w' or 'a', got '" + m + "'");
-        auto w = std::make_shared<Writer>(path, m == "a");
-        self->managed.push_back(w);
-        return w;
+        return registry->open(path, m == "a");
     };
 
     std::string const name = plugin.name;
     sol::table log = lua.create_table();
     // this is captured so the prefix reports the game being processed at log
-    // time, not the one current when the logger was built.
+    // time, not the one current when the logger was built. Only this pipeline's
+    // own thread reads or writes index_, so it needs no synchronization.
     auto const logger = [this, name](char const *level) {
         return [this, name, level](sol::this_state ts, std::string const &fmt, sol::variadic_args va) {
             sol::state_view l(ts);
@@ -699,7 +750,7 @@ sol::table Runtime::buildCtx(PluginInstance &plugin) {
             std::string const msg = r.valid()
                                         ? r.get<std::string>()
                                         : std::format("{} [format error: {}]", fmt, sol::error(r).what());
-            std::println(stderr, "[{}:{}] {}: {}", name, current_index_, level, msg);
+            std::println(stderr, "[{}:{}] {}: {}", name, index_, level, msg);
         };
     };
     log["info"] = logger("info");
@@ -896,7 +947,8 @@ inline bool onError(OnError onError, std::string_view name, std::size_t index, s
 
 } // namespace
 
-bool Runtime::processGame(std::shared_ptr<Game> const &game, std::size_t index) {
+bool Pipeline::process(std::shared_ptr<Game> const &game, std::size_t index) {
+    index_ = index;     // what ctx.log prefixes its lines with
     bool stop = false;  // finish this game, then stop reading the database (graceful)
     bool abort = false; // stop immediately: skip the rest of the pipeline for this game
 
@@ -948,22 +1000,78 @@ bool Runtime::processGame(std::shared_ptr<Game> const &game, std::size_t index) 
     return stop || abort;
 }
 
-PluginSpec parsePluginSpec(std::string const &spec) {
-    PluginSpec plugin;
-    std::istringstream iss(spec);
-    for (std::string tok; iss >> tok;) {
-        if (plugin.path.empty()) {
-            plugin.path = tok;
-            continue;
-        }
-        // Whitespace tokenization means a value cannot contain a space. A bare
-        // token becomes "true", and a repeated key is kept, not overwritten.
-        auto eq = tok.find('=');
-        if (eq == std::string::npos) plugin.args.emplace_back(tok, "true");
-        else plugin.args.emplace_back(tok.substr(0, eq), tok.substr(eq + 1));
+namespace {
+
+namespace detail {
+
+// Opening the output truncates it, and that happens before run() reads any
+// input, so an --output that names an --file would destroy the database before
+// it is parsed. Refuse instead.
+void rejectOutputOverInput(RunOptions const &opts) {
+    if (opts.noOutput || opts.output == "-") return;
+    std::error_code ec;
+    for (auto const &file : opts.files) {
+        if (file == "-") continue;
+        // equivalent() fails when the output does not exist yet, which is the
+        // common case and is not a collision.
+        if (std::filesystem::equivalent(file, opts.output, ec))
+            throw std::runtime_error("refusing to write output over input file: " + file);
     }
-    if (plugin.path.empty()) throw std::runtime_error("empty plugin spec");
-    return plugin;
+}
+
+} // namespace detail
+
+} // namespace
+
+Runtime::Runtime(RunOptions opts) : opts_(std::move(opts)) {
+    detail::rejectOutputOverInput(opts_);
+    if (!opts_.noOutput) {
+        out_ = opts_.output == "-" ? std::make_shared<Writer>() : std::make_shared<Writer>(opts_.output);
+        // So a plugin that opens the --output path writes to the same stream the
+        // runtime emits games on, instead of a second one truncating it.
+        if (opts_.output != "-") writers_.adopt(opts_.output, out_);
+    }
+    // Built here, on one thread, before any worker exists: loading the plugins
+    // also warms sol2's lazily-initialized usertype tables, and doing that from
+    // several threads at once would race.
+    pipelines_.reserve(opts_.jobs);
+    for (std::size_t i = 0; i < opts_.jobs; ++i)
+        pipelines_.push_back(std::make_unique<Pipeline>(opts_, out_, writers_, i + 1, opts_.jobs));
+}
+
+int Runtime::run() {
+    // init() runs on this thread, before any worker exists: it serializes the
+    // engine forks a plugin may do there and keeps error reporting in order.
+    for (auto &pipeline : pipelines_)
+        if (!pipeline->init()) return 1;
+
+    // A local, so every exit path drains and joins the workers.
+    GamePool pool(pipelines_);
+    std::size_t index = 0;
+    for (auto const &file : opts_.files) {
+        if (pool.stopped()) break;
+        std::ifstream in(file);
+        if (!in) {
+            std::println(stderr, "error: cannot open file: {}", file);
+            return 1;
+        }
+        // Games stream through the pipelines one at a time: the parser hands
+        // over each game as it completes, so a database never sits in memory
+        // whole. submit() blocks while every worker is busy, which is what
+        // bounds that to the number of pipelines.
+        parseGames(in, [&](std::shared_ptr<Game> const &game) {
+            ++index;
+            return pool.submit({game, index});
+        });
+    }
+    pool.drain();
+    // Rethrown before finish(): under --on-error abort the exception used to
+    // unwind straight out of run(), so the finish hooks never ran.
+    if (std::exception_ptr const err = pool.error()) std::rethrow_exception(err);
+
+    for (auto &pipeline : pipelines_) pipeline->finish();
+    for (auto &pipeline : pipelines_) pipeline->closeEngines();
+    return 0;
 }
 
 } // namespace tictac

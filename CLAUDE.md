@@ -4,6 +4,8 @@
 
 - Always use C++23.
 - Avoid unnecessary comments.
+- Don't split an existing module into smaller ones. Big files are fine; a new
+  subsystem may get its own file.
 - For development instructions, follow @DEV.md
 - Use the clangd LSP tools for C++ navigation.
 
