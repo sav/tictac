@@ -64,9 +64,6 @@ namespace {
     if (on_error == "pass") opts.onError = OnError::Pass;
     else if (on_error == "drop") opts.onError = OnError::Drop;
     else opts.onError = OnError::Abort;
-    // Resolved here so the runtime always gets a real worker count.
-    // hardware_concurrency reports 0 when it cannot tell, which would leave the
-    // pool with nothing to run the games on.
     opts.jobs = jobs == 0 ? std::max(1U, std::thread::hardware_concurrency()) : jobs;
 
     for (auto const &spec : plugin_specs) opts.plugins.push_back(parsePluginSpec(spec));
