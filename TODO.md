@@ -27,15 +27,16 @@ thread blocking on a single read.
 
 ## Runtime
 
-- **Cross-worker aggregation.** A Lua state cannot be shared between threads, so under
-  `-j N` each worker owns a whole pipeline and `ctx.scope` is private to it. Anything
-  accumulated across games is therefore per worker: `histogram.lua` emits N partial
-  histograms, `dedup.lua` only catches duplicates that land on the same worker, and
-  `finish` runs once per worker. `ctx.worker`/`ctx.workers` let a plugin work around the
-  simplest case (a one-off header), but the general fix is a reduce channel -- a
-  `finish`-time merge hook, or a serialized aggregation context -- so aggregating plugins
-  are correct at any `-j`. Until then they must be run at `-j1`. This is what the removed
-  `ctx.shared` gestured at without ever being safe for it.
+- **Cross-worker aggregation via `ctx.global`.** A Lua state cannot be shared between
+  threads, so under `-j N` each worker owns a whole pipeline: `ctx.scope` is private to
+  it, `finish` runs once per worker, and anything accumulated across games is per worker.
+  Aggregating plugins (a histogram, a dedup table) are therefore only correct at `-j1`,
+  which is why none ship under `plugins/`. Add a `ctx.global` table owned by the runtime
+  rather than by any worker's Lua state, with every access serialized and values crossing
+  the boundary as deep-copied plain data. A synchronized table alone cannot make
+  read-modify-write atomic, so it needs a compare-and-set primitive (or a `finish`-time
+  merge hook) alongside it. This is what the removed `ctx.shared` gestured at without ever
+  being safe for it.
 
 - **Read PGNs from stdin.** Accept PGN input on standard input and process games as
   they arrive.

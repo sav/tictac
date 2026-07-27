@@ -62,9 +62,9 @@ For example, keep only Fischer's white games and write them out:
 tictac --file games.pgn --plugin "filter.lua white=^Fischer" --output fischer.pgn
 ```
 
-See [`plugins/`](plugins/) for runnable examples -- filters, a deduplicator, a
-splitter, CSV and histogram reporters, and engine-driven blunder/puzzle finders
--- and [`LUA.md`](LUA.md) for the plugin interface and an archetype catalog.
+See [`plugins/`](plugins/) for runnable examples -- filters, a splitter, a CSV
+reporter, and engine-driven blunder/puzzle finders -- and [`LUA.md`](LUA.md) for
+the plugin interface and an archetype catalog.
 
 ## Build
 
@@ -166,8 +166,8 @@ along with what implementing them would take.
   chain. `init` and `finish` therefore run once *per worker*, `ctx.scope` is per
   worker, and a plugin that engages an engine spawns one subprocess per worker
   (set the engine's own `Threads` option accordingly, or the two levels of
-  parallelism will oversubscribe the machine). Plugins that aggregate across the
-  whole database -- `histogram.lua`, `dedup.lua` -- only produce a single correct
+  parallelism will oversubscribe the machine). A plugin that aggregates across
+  the whole database (a histogram, a dedup table) only produces a single correct
   result at `-j1`. Games are written in completion order above `-j1`.
 
 ## License

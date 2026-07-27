@@ -297,7 +297,6 @@ tt_case(ex_filter   -f fixtures/three_games.pgn -p "${PLUGINS}/filter.lua white=
 # `event` finds the `Event` tag, and only Carol's game is "Game Two".
 tt_case(ex_filter_header -f fixtures/three_games.pgn -p "${PLUGINS}/filter.lua event=Two" -p "plugins/games_are.lua expect=Carol" --no-output)
 tt_case(ex_position -f fixtures/three_games.pgn -p "${PLUGINS}/position.lua fen=rnbqkbnr" -p "plugins/count.lua expect=3" --no-output)
-tt_case(ex_dedup    -f fixtures/dup_games.pgn   -p "${PLUGINS}/dedup.lua"                 -p "plugins/count.lua expect=2" --no-output)
 
 # position.lua requires its fen= argument.
 tt_error(ex_position_requires_fen "missing required argument: fen" -f fixtures/three_games.pgn -p "${PLUGINS}/position.lua" --no-output)
@@ -318,9 +317,8 @@ function(tt_produces name fixture plugin produced expected)
       -P ${CMAKE_CURRENT_SOURCE_DIR}/produces.cmake)
 endfunction()
 
-tt_produces(ex_csv       three_games.pgn "${PLUGINS}/csv.lua out=ex_csv.csv"                        ex_csv.csv       ex_csv.csv)
-tt_produces(ex_histogram three_games.pgn "${PLUGINS}/histogram.lua by=Result out=ex_histogram.txt" ex_histogram.txt ex_histogram.txt)
-tt_produces(ex_split     three_games.pgn "${PLUGINS}/split.lua by=Result"                          1_0.pgn          ex_split_1_0.pgn)
+tt_produces(ex_csv       three_games.pgn "${PLUGINS}/csv.lua out=ex_csv.csv" ex_csv.csv ex_csv.csv)
+tt_produces(ex_split     three_games.pgn "${PLUGINS}/split.lua by=Result"    1_0.pgn    ex_split_1_0.pgn)
 
 # ctx.open on a path another stage already opened hands back the same writer, so
 # both stages' lines survive instead of the second open truncating the first.

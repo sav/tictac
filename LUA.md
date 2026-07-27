@@ -851,10 +851,8 @@ suite, so it stays working as the runtime moves. Invoke one with
 |--------|--------------|--------------|
 | `filter.lua` | Keep games whose headers match: any `key=pattern` names a header (case-insensitive), plus `player`/`min_elo`. | `filter.lua event=London player=^Carlsen min_elo=2700` |
 | `position.lua` | Forward the first position whose FEN starts with a prefix, as the board cursor. | `position.lua fen=rnbqkbnr` |
-| `dedup.lua` | Drop games already seen this run, keyed by serialized PGN. | `dedup.lua` |
 | `split.lua` | Write each game to its own file, grouped by a header value. | `split.lua by=ECO dir=out/` |
 | `csv.lua` | Export one row per game: white, black, result, eco. | `csv.lua out=games.csv` |
-| `histogram.lua` | Tally games per header value; emit a sorted table in `finish`. | `histogram.lua by=ECO` |
 | `blunder.lua` | Tag moves whose eval swings by at least `drop` centipawns. Needs an engine. | `blunder.lua engine=stockfish depth=16 drop=200` |
 | `puzzle.lua` + `collect.lua` | Find a forced mate, hand the position downstream, then emit it. Needs an engine. | `puzzle.lua mate=3` then `collect.lua out=puzzles.epd` |
 
