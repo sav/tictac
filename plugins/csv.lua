@@ -13,8 +13,6 @@ local plugin = {
   },
 }
 
--- No header row: under -j the workers share one writer and nothing orders a
--- worker's init before another's first row, so a header could land mid-file.
 function plugin.init(ctx)
   ctx.scope.w = ctx.open(ctx.args:get("out", "games.csv"))
 end
