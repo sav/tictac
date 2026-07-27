@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <string>
 #include <utility>
 #include <vector>
@@ -24,6 +25,7 @@ struct RunOptions {
     std::string output = "-";
     bool noOutput = false;
     OnError onError = OnError::Abort;
+    std::size_t jobs = 1; // pipelines run in parallel; always >= 1 by the time run() sees it
 };
 
 // Parse a "file.lua key=value key2=value2" spec into a PluginSpec.
