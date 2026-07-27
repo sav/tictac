@@ -7,13 +7,9 @@
 
 #include "engine.hpp"
 #include "game.hpp"
+#include "writer.hpp"
 
-#include <fstream>
-#include <iostream>
 #include <memory>
-#include <ostream>
-#include <print>
-#include <stdexcept>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -22,40 +18,6 @@
 #include <sol/sol.hpp>
 
 namespace tictac {
-
-// An output sink: a PGN/CSV/text file or the program's default output (stdout).
-class Writer {
-public:
-    Writer() = default;
-
-    explicit Writer(std::string const &path, bool append = false) {
-        file_.open(path, append ? std::ios::app : std::ios::trunc);
-        if (!file_) throw std::runtime_error("cannot open file: " + path);
-        os_ = &file_;
-    }
-
-    Writer(Writer const &) = delete;
-    Writer &operator=(Writer const &) = delete;
-    // Not movable: os_ points at this object's own file_ member.
-    Writer(Writer &&) = delete;
-    Writer &operator=(Writer &&) = delete;
-
-    void write(std::string const &text) {
-        std::print(*os_, "{}", text);
-        os_->flush();
-        if (!*os_) throw std::runtime_error("writer: write failed");
-    }
-
-    void writeGame(std::shared_ptr<Game> const &game) {
-        std::print(*os_, "{}\n", game->pgn());
-        os_->flush();
-        if (!*os_) throw std::runtime_error("writer: write failed");
-    }
-
-private:
-    std::ofstream file_;            // closed (and flushed) on destruction
-    std::ostream *os_ = &std::cout; // borrows file_ when open, else std::cout
-};
 
 // A plugin's parsed CLI arguments with typed accessors.
 struct Args {
