@@ -17,6 +17,8 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
+find_package(Threads REQUIRED)
+
 # CLI11 for command-line argument parsing. Pulled in at configure time so the
 # build is self-contained and does not depend on a system-installed copy.
 include(FetchContent)
@@ -77,7 +79,7 @@ target_compile_definitions(tictac PRIVATE
   # since the runtime already catches and reports every plugin error itself.
   SOL_PRINT_ERRORS=0
   TICTAC_VERSION="${TICTAC_VERSION}")
-target_link_libraries(tictac PRIVATE CLI11::CLI11 lua_static)
+target_link_libraries(tictac PRIVATE CLI11::CLI11 lua_static Threads::Threads)
 target_include_directories(tictac SYSTEM PRIVATE
   ${chesslib_SOURCE_DIR}/include
   ${sol2_SOURCE_DIR}/include

@@ -10,6 +10,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <ostream>
 #include <print>
 #include <stdexcept>
@@ -35,18 +36,25 @@ public:
     Writer &operator=(Writer &&) = delete;
 
     void write(std::string const &text) {
+        std::scoped_lock const lock(mu_);
         std::print(*os_, "{}", text);
         os_->flush();
         if (!*os_) throw std::runtime_error("writer: write failed");
     }
 
     void writeGame(std::shared_ptr<Game> const &game) {
-        std::print(*os_, "{}\n", game->pgn());
+        // Serialized outside the lock: the game belongs to the calling worker,
+        // and holding the sink while formatting would stall every other one.
+        std::string const text = game->pgn();
+        std::scoped_lock const lock(mu_);
+        std::print(*os_, "{}\n", text);
         os_->flush();
         if (!*os_) throw std::runtime_error("writer: write failed");
     }
 
 private:
+    // One record per lock, so records from parallel workers never interleave.
+    std::mutex mu_;
     std::ofstream file_;            // closed (and flushed) on destruction
     std::ostream *os_ = &std::cout; // borrows file_ when open, else std::cout
 };
