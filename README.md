@@ -88,6 +88,12 @@ a small Lua plugin (under [`tests/plugins/`](tests/plugins/)) over a PGN fixture
 every return type (valid and invalid), `input.data` flowing down the pipeline,
 per-plugin `ctx.scope`, and the Game/Board/Move API.
 
+Parallel runs are covered too: `-j1` must stay byte-identical to a sequential
+run, while `-j4`/`-j8` are compared as a multiset of lines (completion order is
+not fixed) to catch a lost, duplicated or torn record. Separate cases pin the
+bounded stop, an abort raised on a worker travelling back intact, and two stages
+sharing one `ctx.open` file across every worker.
+
 Malformed PGN is covered too: an unparseable or ambiguous SAN token abandons
 just that game, and a parse error from the reader keeps everything read before
 it, so both warn and neither aborts the run. Those cases assert which games came

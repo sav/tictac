@@ -83,6 +83,8 @@ tt_case(onerror_drop_raise -f fixtures/three_games.pgn -p "plugins/return_modes.
 # Everything else runs --no-output, which leaves Writer::writeGame and Game::pgn()
 # unexercised: move numbering, the black-to-move "N..." form, and the result token.
 
+# An extra argument pins --jobs; only -j1 preserves input order, so only -j1 can
+# be byte-compared.
 function(tt_roundtrip name fixture)
   add_test(NAME ${name}
     COMMAND ${CMAKE_COMMAND}
@@ -91,11 +93,75 @@ function(tt_roundtrip name fixture)
       -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/${fixture}
       -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/expected/${fixture}
       -DOUT=${CMAKE_CURRENT_BINARY_DIR}/${name}.pgn
+      -DJOBS=${ARGN}
       -P ${CMAKE_CURRENT_SOURCE_DIR}/roundtrip.cmake)
 endfunction()
 
 tt_roundtrip(roundtrip_startpos       scholars.pgn)
 tt_roundtrip(roundtrip_black_to_move  black_to_move.pgn)
+
+# --- Parallel runs (--jobs) -----------------------------------------------------
+# many_games.pgn holds 12 games with distinct headers, so several workers really
+# do overlap. -j1 must stay byte-identical to a sequential run; above it games
+# come out in completion order, so those cases compare sorted lines instead.
+
+tt_roundtrip(jobs_one_matches_sequential many_games.pgn 1)
+
+function(tt_jobs name fixture jobs plugin expected)
+  add_test(NAME ${name}
+    COMMAND ${CMAKE_COMMAND}
+      -DTICTAC=$<TARGET_FILE:tictac>
+      -DJOBS=${jobs}
+      -DPLUGIN=${plugin}
+      -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/${fixture}
+      -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/expected/${expected}
+      -DOUT=${CMAKE_CURRENT_BINARY_DIR}/${name}.pgn
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/jobs.cmake)
+  set_tests_properties(${name} PROPERTIES TIMEOUT 60)
+endfunction()
+
+set(TT_PASS ${CMAKE_CURRENT_SOURCE_DIR}/plugins/return_modes.lua\ mode=pass)
+tt_jobs(jobs_four_same_set  many_games.pgn 4  "${TT_PASS}" many_games.pgn)
+tt_jobs(jobs_eight_same_set many_games.pgn 8  "${TT_PASS}" many_games.pgn)
+# More workers than games: the extra pipelines must simply idle and shut down.
+tt_jobs(jobs_more_than_games three_games.pgn 8 "${TT_PASS}" three_games.pgn)
+
+# A stop under -j halts the run cleanly; the games already in flight still land,
+# so the count is bounded by the worker count rather than exact.
+add_test(NAME jobs_stop_is_bounded
+  COMMAND ${CMAKE_COMMAND}
+    -DTICTAC=$<TARGET_FILE:tictac>
+    -DJOBS=4
+    -DPLUGIN=${CMAKE_CURRENT_SOURCE_DIR}/plugins/return_modes.lua\ mode=table_stop
+    -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/many_games.pgn
+    -DOUT=${CMAKE_CURRENT_BINARY_DIR}/jobs_stop_is_bounded.pgn
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/jobs_stop.cmake)
+set_tests_properties(jobs_stop_is_bounded PROPERTIES TIMEOUT 60)
+
+# An abort raised on a worker has to come back to the main thread with its
+# message intact, not vanish or terminate the process.
+tt_error(jobs_abort_reports "boom" -j 4 -f fixtures/many_games.pgn -p "plugins/return_modes.lua mode=raise" --no-output)
+set_tests_properties(jobs_abort_reports PROPERTIES TIMEOUT 60)
+
+# Two stages, every worker, one shared ctx.open file: 12 games x 2 stages must
+# yield 24 intact lines however the writes interleave.
+add_test(NAME jobs_shared_writer
+  COMMAND ${CMAKE_COMMAND}
+    -DTICTAC=$<TARGET_FILE:tictac>
+    -DJOBS=4
+    -DPLUGIN=${CMAKE_CURRENT_SOURCE_DIR}/plugins/emit_line.lua\ out=shared.txt\ tag=a
+    -DPLUGIN2=${CMAKE_CURRENT_SOURCE_DIR}/plugins/emit_line.lua\ out=shared.txt\ tag=b
+    -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/many_games.pgn
+    -DPRODUCED=shared.txt
+    -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/expected/jobs_shared_writer.txt
+    -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/jobs_shared_writer
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/jobs_writer.cmake)
+set_tests_properties(jobs_shared_writer PROPERTIES TIMEOUT 60)
+
+# --jobs argument validation.
+tt_case(jobs_auto -j 0 -f fixtures/three_games.pgn -p "plugins/return_modes.lua mode=pass" --no-output)
+tt_error(jobs_not_a_number "not in range" -j abc   -f fixtures/three_games.pgn -p plugins/count.lua --no-output)
+tt_error(jobs_out_of_range "not in range" -j 99999 -f fixtures/three_games.pgn -p plugins/count.lua --no-output)
 
 # --- Pipeline value & context contract ------------------------------------------
 
