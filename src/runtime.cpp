@@ -6,8 +6,10 @@
 #include "runtime.hpp"
 
 #include "game.hpp"
+#include "pool.hpp"
 
 #include <cstdio>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -53,26 +55,35 @@ Runtime::Runtime(RunOptions opts) : opts_(std::move(opts)) {
 }
 
 int Runtime::run() {
+    // init() runs on this thread, before any worker exists: it serializes the
+    // engine forks a plugin may do there and keeps error reporting in order.
     for (auto &pipeline : pipelines_)
         if (!pipeline->init()) return 1;
 
+    // A local, so every exit path drains and joins the workers.
+    GamePool pool(pipelines_);
     std::size_t index = 0;
-    bool aborted = false;
     for (auto const &file : opts_.files) {
-        if (aborted) break;
+        if (pool.stopped()) break;
         std::ifstream in(file);
         if (!in) {
             std::println(stderr, "error: cannot open file: {}", file);
             return 1;
         }
-        // Games stream through the pipeline one at a time: the parser hands over
-        // each game as it completes, so a database never sits in memory whole.
+        // Games stream through the pipelines one at a time: the parser hands
+        // over each game as it completes, so a database never sits in memory
+        // whole. submit() blocks while every worker is busy, which is what
+        // bounds that to the number of pipelines.
         parseGames(in, [&](std::shared_ptr<Game> const &game) {
             ++index;
-            if (pipelines_.front()->process(game, index)) aborted = true;
-            return !aborted;
+            return pool.submit({game, index});
         });
     }
+    pool.drain();
+    // Rethrown before finish(): under --on-error abort the exception used to
+    // unwind straight out of run(), so the finish hooks never ran.
+    if (std::exception_ptr const err = pool.error()) std::rethrow_exception(err);
+
     for (auto &pipeline : pipelines_) pipeline->finish();
     for (auto &pipeline : pipelines_) pipeline->closeEngines();
     return 0;
