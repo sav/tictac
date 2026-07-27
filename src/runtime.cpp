@@ -948,22 +948,4 @@ bool Runtime::processGame(std::shared_ptr<Game> const &game, std::size_t index) 
     return stop || abort;
 }
 
-PluginSpec parsePluginSpec(std::string const &spec) {
-    PluginSpec plugin;
-    std::istringstream iss(spec);
-    for (std::string tok; iss >> tok;) {
-        if (plugin.path.empty()) {
-            plugin.path = tok;
-            continue;
-        }
-        // Whitespace tokenization means a value cannot contain a space. A bare
-        // token becomes "true", and a repeated key is kept, not overwritten.
-        auto eq = tok.find('=');
-        if (eq == std::string::npos) plugin.args.emplace_back(tok, "true");
-        else plugin.args.emplace_back(tok.substr(0, eq), tok.substr(eq + 1));
-    }
-    if (plugin.path.empty()) throw std::runtime_error("empty plugin spec");
-    return plugin;
-}
-
 } // namespace tictac

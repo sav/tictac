@@ -7,6 +7,7 @@
 
 #include "engine.hpp"
 #include "game.hpp"
+#include "options.hpp"
 #include "writer.hpp"
 
 #include <memory>
@@ -38,21 +39,6 @@ struct LuaMove {
     chess::Board before;        // position before the move (for SAN/piece/etc.)
     std::shared_ptr<Game> game; // keeps mainline moves alive; null for ad-hoc moves
     int ply = -1;               // index into game->moves; -1 if not a mainline move
-};
-
-enum class OnError { Abort, Drop, Pass };
-
-struct PluginSpec {
-    std::string path;
-    std::vector<std::pair<std::string, std::string>> args;
-};
-
-struct RunOptions {
-    std::vector<std::string> files;
-    std::vector<PluginSpec> plugins;
-    std::string output = "-";
-    bool noOutput = false;
-    OnError onError = OnError::Abort;
 };
 
 // A loaded plugin and its private execution context.
@@ -93,8 +79,5 @@ private:
     WriterRegistry writers_; // ctx.open() sinks, one per path for the whole run
     std::size_t current_index_ = 0;
 };
-
-// Parse a "file.lua key=value key2=value2" spec into a PluginSpec.
-[[nodiscard]] PluginSpec parsePluginSpec(std::string const &spec);
 
 } // namespace tictac
