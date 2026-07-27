@@ -65,7 +65,14 @@ class Pipeline {
 public:
     // Loads every plugin in `opts.plugins` into a fresh Lua state, throwing when
     // one fails to load. `opts` and `writers` must outlive the pipeline.
-    Pipeline(RunOptions const &opts, std::shared_ptr<Writer> out, WriterRegistry &writers);
+    // `worker` is 1-based and `workers` is the total, as ctx reports them.
+    Pipeline(
+        RunOptions const &opts,
+        std::shared_ptr<Writer> out,
+        WriterRegistry &writers,
+        std::size_t worker,
+        std::size_t workers
+    );
 
     Pipeline(Pipeline const &) = delete;
     Pipeline &operator=(Pipeline const &) = delete;
@@ -94,6 +101,8 @@ private:
     RunOptions const &opts_;
     std::shared_ptr<Writer> out_;
     WriterRegistry &writers_;
+    std::size_t const worker_;  // 1-based; ctx.worker
+    std::size_t const workers_; // ctx.workers
     sol::state lua_;
     std::vector<std::unique_ptr<PluginInstance>> plugins_;
     std::size_t index_ = 0; // current game; read by the ctx.log closures

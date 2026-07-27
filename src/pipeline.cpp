@@ -200,8 +200,14 @@ sol::object scalarOrArrayChecked(
 
 } // namespace
 
-Pipeline::Pipeline(RunOptions const &opts, std::shared_ptr<Writer> out, WriterRegistry &writers)
-    : opts_(opts), out_(std::move(out)), writers_(writers) {
+Pipeline::Pipeline(
+    RunOptions const &opts,
+    std::shared_ptr<Writer> out,
+    WriterRegistry &writers,
+    std::size_t worker,
+    std::size_t workers
+)
+    : opts_(opts), out_(std::move(out)), writers_(writers), worker_(worker), workers_(workers) {
     // clang-format off
     lua_.open_libraries(
 		sol::lib::base,
@@ -629,6 +635,10 @@ sol::table Pipeline::buildCtx(PluginInstance &plugin) {
     ctx["args"] = plugin.args;
     ctx["scope"] = lua.create_table(); // fresh per plugin, so keys cannot collide
     ctx["out"] = out_;
+    // Which of the --jobs workers this pipeline is, so a plugin sharing an
+    // output file can emit a one-off header from worker 1 alone.
+    ctx["worker"] = worker_;
+    ctx["workers"] = workers_;
     ctx["engine"] = [self](std::string const &path, sol::optional<sol::table> opts) {
         auto it = self->engines.find(path);
         if (it != self->engines.end()) return it->second;

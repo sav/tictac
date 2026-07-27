@@ -220,6 +220,8 @@ It is how a plugin talks to tictac.
 | `ctx.args` | This plugin's parsed CLI arguments (see accessors below). |
 | `ctx.scope` | A table private to **this** plugin instance -- its own scratch space, persisting across hooks. |
 | `ctx.index` | 1-based index of the current game in the database (valid in `process`). |
+| `ctx.worker` | 1-based index of the worker running this pipeline; always `1` without `--jobs`. Gate a one-off write to a shared file with `if ctx.worker == 1 then`. |
+| `ctx.workers` | Total number of workers (the resolved `--jobs`); `1` by default. |
 | `ctx.engine(path, opts)` | Create / fetch a [UCI engine](#engine) handle (managed & auto-closed). |
 | `ctx.open(path, mode?)` | Open a [Writer](#writer) (managed & auto-closed). `mode`: `"w"` (default, truncates) / `"a"` (append); any other value is an error. A path already open hands back **the same writer** instead of truncating it, so two plugins can share one file; reopening it with the *other* mode is an error. |
 | `ctx.out` | The default output [Writer](#writer) (honours `--output`); **`nil` under `--no-output`**, so guard with `if ctx.out then`. Write to it mid-pipeline with `ctx.out:writeGame(game)`. |
@@ -299,6 +301,9 @@ end
 
 - **`input.data`** → per-game, flows *down* the pipeline (stage to stage).
 - **`ctx.scope`** → per-plugin, persists *across games* (this plugin only).
+
+Under `-j N` both of those are per worker as well; only `ctx.out` and the
+`ctx.open` writers are shared across workers.
 
 ---
 
