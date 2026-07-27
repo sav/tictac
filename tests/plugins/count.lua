@@ -4,6 +4,9 @@
 -- count.lua -- count the values received from the previous plugin and assert the
 -- total equals `expect=` at finish. Used to observe how upstream returns (pass,
 -- drop, stop, fan-out) shape the stream.
+--
+-- Only meaningful at -j1: with more workers each gets its own ctx.scope, so the
+-- total is split across them and finish() asserts once per worker.
 
 local plugin = {}
 
