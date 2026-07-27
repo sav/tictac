@@ -4,7 +4,6 @@
 // Command-line application: CLI11 argument parsing and run loop.
 
 #include "app.hpp"
-#include "options.hpp"
 #include "runtime.hpp"
 
 #include <algorithm>

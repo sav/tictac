@@ -6,7 +6,7 @@
 #pragma once
 
 #include "game.hpp"
-#include "pipeline.hpp"
+#include "runtime.hpp"
 
 #include <condition_variable>
 #include <cstddef>
