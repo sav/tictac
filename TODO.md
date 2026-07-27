@@ -38,6 +38,16 @@ thread blocking on a single read.
   merge hook) alongside it. This is what the removed `ctx.shared` gestured at without ever
   being safe for it.
 
+- **Leveled logging with `-v`/`-q`.** The runtime never says what it is doing: nothing
+  reports how many workers `-j` resolved to, which plugins loaded and in what order, which
+  file is being parsed, or which hook is running on which worker. Add a leveled logger
+  writing to stderr, with a repeatable `-v` raising the level (info, debug, trace), a `-q`
+  dropping it to errors only, and the two rejected together. Both short flags are free --
+  `--version` has no `-v` form. `ctx.log` already prints `[plugin:index] level: msg` at
+  four levels but is ungated, so the same threshold should gate it and the runtime's own
+  lines should match its format. Everything goes to stderr: stdout carries the games under
+  the default `--output -`.
+
 - **Read PGNs from stdin.** Accept PGN input on standard input and process games as
   they arrive.
 
