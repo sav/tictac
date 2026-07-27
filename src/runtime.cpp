@@ -51,7 +51,12 @@ Runtime::Runtime(RunOptions opts) : opts_(std::move(opts)) {
         // runtime emits games on, instead of a second one truncating it.
         if (opts_.output != "-") writers_.adopt(opts_.output, out_);
     }
-    pipelines_.push_back(std::make_unique<Pipeline>(opts_, out_, writers_));
+    // Built here, on one thread, before any worker exists: loading the plugins
+    // also warms sol2's lazily-initialized usertype tables, and doing that from
+    // several threads at once would race.
+    pipelines_.reserve(opts_.jobs);
+    for (std::size_t i = 0; i < opts_.jobs; ++i)
+        pipelines_.push_back(std::make_unique<Pipeline>(opts_, out_, writers_));
 }
 
 int Runtime::run() {

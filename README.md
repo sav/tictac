@@ -44,7 +44,7 @@ lifecycle hooks -- `init` (once, at startup), `process` (once per game), and
 ## Usage
 
 ```sh
-tictac --file <db.pgn> --plugin <spec>... [--output <file>] [--on-error <mode>]
+tictac --file <db.pgn> --plugin <spec>... [--output <file>] [--on-error <mode>] [--jobs <n>]
 ```
 
 | Flag | Meaning |
@@ -53,6 +53,7 @@ tictac --file <db.pgn> --plugin <spec>... [--output <file>] [--on-error <mode>]
 | `-p`, `--plugin` | A plugin spec: `"file.lua key=value ..."`. Required; repeatable; defines pipeline order. |
 | `-o`, `--output` | Where surviving games are written (default: stdout, PGN). |
 | `--no-output` | Discard the default game stream (useful for pure reporters). |
+| `-j`, `--jobs` | Games to process in parallel (default `1`; `0` = one per CPU). Each worker runs its own copy of the whole plugin chain, so above `1` games are written in completion order rather than input order -- see [Limitations](#limitations). |
 | `--on-error` | `abort` \| `drop` \| `pass` (default `abort`) -- how a plugin's failing `process()` is handled: `abort` halts the run, `drop` drops the game, `pass` passes it through unchanged; all three log the error. A failing `init` always aborts. |
 
 For example, keep only Fischer's white games and write them out:
@@ -153,8 +154,15 @@ along with what implementing them would take.
 - **`meta.args` is declarative only.** A plugin's argument schema is not
   validated, and there is no per-plugin `--help`; `ctx.args` accessors need an
   explicit default at the call site.
-- **Single-threaded, whole-file input.** Games are processed sequentially and the
-  input is read from files only (no stdin, no streaming).
+- **Whole-file input.** Input is read from files only (no stdin, no streaming).
+- **Parallelism is per game, not per plugin.** A Lua state cannot be shared
+  between threads, so `-j N` gives each worker its own copy of the entire plugin
+  chain. `init` and `finish` therefore run once *per worker*, `ctx.scope` is per
+  worker, and a plugin that engages an engine spawns one subprocess per worker
+  (set the engine's own `Threads` option accordingly, or the two levels of
+  parallelism will oversubscribe the machine). Plugins that aggregate across the
+  whole database -- `histogram.lua`, `dedup.lua` -- only produce a single correct
+  result at `-j1`. Games are written in completion order above `-j1`.
 
 ## License
 

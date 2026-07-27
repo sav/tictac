@@ -36,7 +36,7 @@ flowchart LR
 ## 2. Command-line surface
 
 ```sh
-tictac --file <db.pgn> [--plugin <spec>]... [--output <file>] [--on-error <mode>]
+tictac --file <db.pgn> [--plugin <spec>]... [--output <file>] [--on-error <mode>] [--jobs <n>]
 ```
 
 | Flag | Meaning |
@@ -45,6 +45,7 @@ tictac --file <db.pgn> [--plugin <spec>]... [--output <file>] [--on-error <mode>
 | `--plugin`, `-p` | A plugin spec (see below). Repeatable; defines pipeline order. |
 | `--output`, `-o` | Where surviving games are written (default: stdout, PGN). `-` = stdout, omit with `--no-output`. |
 | `--no-output` | Discard the default game stream (useful for pure reporters). |
+| `--jobs`, `-j` | Games to process in parallel (default `1`; `0` = one per CPU). Each worker gets its own Lua state and its own copy of every plugin -- see [§8](#8-execution-semantics). |
 | `--on-error` | `abort` \| `drop` \| `pass` (default `abort`) -- how a plugin's failing `process()` is handled: `abort` halts the run, `drop` drops the game, `pass` passes it through unchanged; all three log the error. A failing `init` always aborts. |
 
 ### Plugin spec & arguments
@@ -948,6 +949,25 @@ end
 7. After all games (or after a `"stop"`/`"abort"`), each plugin's `finish` runs
    **in pipeline order**.
 8. All managed engines and writers are closed.
+
+### Parallel runs (`--jobs`)
+
+`-j N` runs N independent copies of the whole pipeline, one per worker thread,
+because a Lua state cannot be entered by two threads. At the default `-j1` the
+behavior above is exact. Above it:
+
+- **Everything in `ctx` is per worker.** `init` and `finish` each run N times and
+  `ctx.scope` is private to one worker. A plugin that aggregates over the
+  database (a histogram, a dedup table) sees only the games its own worker
+  handled, so run those at `-j1`. `ctx.out` and `ctx.open` writers are the
+  exception: they are shared, and each `write`/`writef`/`writeGame` call is
+  atomic against other workers.
+- **Games are written in completion order**, not input order.
+- **A `"stop"` or `"abort"` stops feeding the pool at once**, but up to N-1 games
+  already in flight still run to completion and are emitted. One further game is
+  also parsed (and discarded) before the reader notices.
+- **Under `--on-error abort` the reported error is whichever worker failed
+  first**, and games that had not started are dropped.
 
 ### Errors
 
