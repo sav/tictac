@@ -5,17 +5,11 @@ nothing gets silently lost.
 
 ## Concurrency
 
-These three are pieces of one async pipeline and are best designed together: parallel
-workers spread games across threads, the non-blocking engine API lets each worker keep
-several analyses in flight instead of blocking per position, and readiness-based I/O
+`-j`/`--jobs` now spreads games across a pool of workers. These two remaining pieces
+are best designed together: the non-blocking engine API lets each worker keep several
+analyses in flight instead of blocking per position, and readiness-based I/O
 multiplexing (`poll`/`epoll`) lets a single event loop drive many engines without any
 thread blocking on a single read.
-
-- **Parallel game workers (`-j`/`--jobs`).** `Runtime::run` processes games
-  sequentially. Add a parallel execution path (thread pool / `std::execution` policy)
-  that reads games one at a time and dispatches each to a worker, multiplexing the input
-  across pipelines that converge on the same output -- synchronizing writes so concurrent
-  workers never overlap or corrupt the format.
 
 - **Non-blocking engine API.** `Engine::analyse` blocks the caller until the engine
   reports `bestmove`, so one thread can drive only a single position at a time and cannot
@@ -32,6 +26,16 @@ thread blocking on a single read.
   multiplexes several engines' output streams for the async API above.
 
 ## Runtime
+
+- **Cross-worker aggregation.** A Lua state cannot be shared between threads, so under
+  `-j N` each worker owns a whole pipeline and `ctx.scope` is private to it. Anything
+  accumulated across games is therefore per worker: `histogram.lua` emits N partial
+  histograms, `dedup.lua` only catches duplicates that land on the same worker, and
+  `finish` runs once per worker. `ctx.worker`/`ctx.workers` let a plugin work around the
+  simplest case (a one-off header), but the general fix is a reduce channel -- a
+  `finish`-time merge hook, or a serialized aggregation context -- so aggregating plugins
+  are correct at any `-j`. Until then they must be run at `-j1`. This is what the removed
+  `ctx.shared` gestured at without ever being safe for it.
 
 - **Read PGNs from stdin.** Accept PGN input on standard input and process games as
   they arrive.
@@ -69,6 +73,12 @@ thread blocking on a single read.
     change to see the variation at all.
 
 ## Engine
+
+- **Share engines across workers.** `ctx.engine` memoizes per plugin instance, and `-j N`
+  gives every worker its own instance, so N workers spawn N subprocesses per engine path.
+  Each engine also has its own `Threads` option, so the two levels of parallelism multiply
+  and oversubscribe the machine unless the user tunes them by hand. A pooled engine behind
+  the non-blocking API above would let the workers share a fixed set instead.
 
 - **`EINTR` tears down the engine session.** `Engine::send` and `Engine::readLine` treat
   any `n <= 0` from `::write`/`::read` as fatal. A signal delivered mid-call makes the
