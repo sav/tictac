@@ -111,6 +111,16 @@ thread blocking on a single read.
 
 ## Plugins
 
+- **`setup`/`teardown` hooks that run once for the whole run.** Under `-j N` both `init`
+  and `finish` run once *per worker*, so neither can emit a one-off header or footer on a
+  shared `ctx.open` writer: nothing orders one worker's `init` against another's first
+  `process`, which is why `csv.lua` no longer writes a header row. Add an optional
+  `setup(ctx)` called exactly once before any pipeline's `init`, and a matching
+  `teardown(ctx)` after every `finish`. Both run on the main thread with no worker in
+  flight, so they need no synchronization, and a writer `setup` opens reaches the
+  pipelines through the existing `WriterRegistry`. Open question: whether they get worker
+  1's `ctx` or a dedicated one whose `ctx.scope` no worker can see.
+
 - **Argument schema validation and `--help`.** Plugins may declare a `meta.args` schema
   (`type`/`default`/`help`) plus `meta.version`/`meta.description`, and LUA.md says the
   schema is "used for validation and --help" -- but `loadPlugins` only reads `meta.name`.
