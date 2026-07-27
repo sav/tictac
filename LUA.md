@@ -217,7 +217,6 @@ It is how a plugin talks to tictac.
 | Member | Description |
 |--------|-------------|
 | `ctx.args` | This plugin's parsed CLI arguments (see accessors below). |
-| `ctx.shared` | A table shared by **all** plugins and **all** games -- global accumulator / cross-plugin channel. |
 | `ctx.scope` | A table private to **this** plugin instance -- its own scratch space, persisting across hooks. |
 | `ctx.index` | 1-based index of the current game in the database (valid in `process`). |
 | `ctx.engine(path, opts)` | Create / fetch a [UCI engine](#engine) handle (managed & auto-closed). |
@@ -299,7 +298,6 @@ end
 
 - **`input.data`** → per-game, flows *down* the pipeline (stage to stage).
 - **`ctx.scope`** → per-plugin, persists *across games* (this plugin only).
-- **`ctx.shared`** → global, persists across games *and* plugins.
 
 ---
 
@@ -883,18 +881,17 @@ end
 
 These show further possibilities the interface allows but do not ship as
 plugins: each leans on data or a helper tictac does not provide (an opening
-book, a position classifier, a shared tree), so read them as pseudocode rather
-than runnable files.
+book, a position classifier, a trie), so read them as pseudocode rather than
+runnable files.
 
 #### ECO tagger
 
 Look each game up in an opening book and stamp the ECO/Opening headers.
-`ctx.shared.eco_book` is whatever lookup table the host or an earlier plugin
-loaded.
+`ctx.scope.eco_book` is whatever lookup table the plugin loaded in `init`.
 
 ```lua
 function plugin.process(input, ctx)
-  local eco = ctx.shared.eco_book:lookup(input.game)
+  local eco = ctx.scope.eco_book:lookup(input.game)
   input.game:setHeader("ECO", eco.code)
   input.game:setHeader("Opening", eco.name)
   return input
@@ -918,12 +915,12 @@ end
 
 #### Opening tree (aggregate)
 
-Fold every game's first moves into a shared trie, then serialize it in `finish`.
-`ctx.shared.tree` is a node structure the plugin maintains itself.
+Fold every game's first moves into a trie, then serialize it in `finish`.
+`ctx.scope.tree` is a node structure the plugin maintains itself.
 
 ```lua
 function plugin.process(input, ctx)
-  local node = ctx.shared.tree
+  local node = ctx.scope.tree
   for i, mv in ipairs(input.game:moves()) do
     if i > 12 then break end
     node = node:child(mv:san())
@@ -931,7 +928,7 @@ function plugin.process(input, ctx)
   end
   return input
 end
--- finish: serialize ctx.shared.tree to JSON/PGN.
+-- finish: serialize ctx.scope.tree to JSON/PGN.
 ```
 
 ---

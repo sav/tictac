@@ -105,9 +105,6 @@ tt_case(data_flow -f fixtures/three_games.pgn -p plugins/data_set.lua -p plugins
 # ctx.scope: per-plugin, persists across games. Two instances must each count 3.
 tt_case(scope_per_plugin -f fixtures/three_games.pgn -p "plugins/scope_count.lua games=3" -p "plugins/scope_count.lua games=3" --no-output)
 
-# ctx.shared: global across plugins and games. Two instances over 3 games -> 6.
-tt_case(shared_global -f fixtures/three_games.pgn -p plugins/shared_inc.lua -p "plugins/shared_inc.lua expect=6" --no-output)
-
 # input.board: the cursor starts at the game's first position, not its last, and
 # a plugin that hands one along reaches the next plugin at that same position --
 # including through a bare-Game return, which must not re-derive the cursor.

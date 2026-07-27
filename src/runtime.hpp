@@ -128,7 +128,6 @@ private:
     RunOptions opts_;
     sol::state lua_;
     std::vector<std::unique_ptr<PluginInstance>> plugins_;
-    sol::table shared_;
     std::shared_ptr<Writer> out_;
     std::size_t current_index_ = 0;
 };

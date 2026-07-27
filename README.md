@@ -85,7 +85,7 @@ The test suite drives the built `tictac` binary through
 a small Lua plugin (under [`tests/plugins/`](tests/plugins/)) over a PGN fixture
 (under [`tests/fixtures/`](tests/fixtures/)) and asserts the plugin contract --
 every return type (valid and invalid), `input.data` flowing down the pipeline,
-per-plugin `ctx.scope`, global `ctx.shared`, and the Game/Board/Move API.
+per-plugin `ctx.scope`, and the Game/Board/Move API.
 
 Malformed PGN is covered too: an unparseable or ambiguous SAN token abandons
 just that game, and a parse error from the reader keeps everything read before

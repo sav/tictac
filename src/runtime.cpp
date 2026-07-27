@@ -229,7 +229,6 @@ Runtime::Runtime(RunOptions opts) : opts_(std::move(opts)) {
 		sol::lib::package
     );
     // clang-format on
-    shared_ = lua_.create_table();
     if (!opts_.noOutput)
         out_ = opts_.output == "-" ? std::make_shared<Writer>() : std::make_shared<Writer>(opts_.output);
     registerTypes();
@@ -661,7 +660,6 @@ sol::table Runtime::buildCtx(PluginInstance &plugin) {
     sol::table ctx = lua.create_table();
 
     ctx["args"] = plugin.args;
-    ctx["shared"] = shared_;           // one table for every plugin
     ctx["scope"] = lua.create_table(); // fresh per plugin, so keys cannot collide
     ctx["out"] = out_;
     ctx["engine"] = [self](std::string const &path, sol::optional<sol::table> opts) {
