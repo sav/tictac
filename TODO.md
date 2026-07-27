@@ -119,7 +119,8 @@ thread blocking on a single read.
   `teardown(ctx)` after every `finish`. Both run on the main thread with no worker in
   flight, so they need no synchronization, and a writer `setup` opens reaches the
   pipelines through the existing `WriterRegistry`. Open question: whether they get worker
-  1's `ctx` or a dedicated one whose `ctx.scope` no worker can see.
+  1's `ctx` or a dedicated one whose `ctx.scope` no worker can see. When this lands, move
+  `csv.lua`'s header row back, into `setup`, and restore it in `tests/expected/ex_csv.csv`.
 
 - **Argument schema validation and `--help`.** Plugins may declare a `meta.args` schema
   (`type`/`default`/`help`) plus `meta.version`/`meta.description`, and LUA.md says the
