@@ -855,6 +855,7 @@ suite, so it stays working as the runtime moves. Invoke one with
 | `csv.lua` | Export one row per game: white, black, result, eco. | `csv.lua out=games.csv` |
 | `blunder.lua` | Tag moves whose eval swings by at least `drop` centipawns. Needs an engine. | `blunder.lua engine=stockfish depth=16 drop=200` |
 | `puzzle.lua` + `collect.lua` | Find a forced mate, hand the position downstream, then emit it. Needs an engine. | `puzzle.lua mate=3` then `collect.lua out=puzzles.epd` |
+| `cheat.lua` | Estimate the probability a player used engine help: several engine-correlation indicators folded into one posterior. Needs an engine; run at `-j1`. | `cheat.lua player=^Doe depth=18 multipv=5 report=out.txt` |
 
 The `puzzle` -> `collect` pair is the cross-plugin handoff the pipeline value
 exists for: one plugin selects a position and attaches data, the next reads it.

@@ -142,3 +142,20 @@ thread blocking on a single read.
   because its CMakeLists predates CMake 3.5. Check whether a newer walterschell/Lua tag
   raises its own `cmake_minimum_required`, and if so bump the `v5.4.5` pin and drop the
   save/force/restore shim entirely.
+
+## cheat.lua screener
+
+`plugins/cheat.lua` ships several engine-correlation indicators folded into one
+posterior. These extensions were deliberately left out and are worth adding:
+
+- **Multi-depth agreement.** Analyse each position at a shallow and a deep depth and
+  test whether the player's moves track the deep-only best more than an honest player
+  would -- a signature of a strong engine specifically, not just good play. Doubles the
+  engine cost, so gate it behind an argument.
+- **Clock-model signal beyond correlation.** The move-time indicator is only a
+  time-vs-difficulty correlation. Add an explicit per-move time model (expected think
+  time vs observed), flagging hard moves played near-instantly and suspiciously flat
+  time distributions.
+- **Posterior calibration from labelled data.** The combined-z -> posterior mapping is a
+  documented logistic heuristic. If a labelled set of clean/assisted players becomes
+  available, fit the slope/prior instead of hardcoding `beta`/`prior`.

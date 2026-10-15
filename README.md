@@ -63,8 +63,9 @@ tictac --file games.pgn --plugin "filter.lua white=^Fischer" --output fischer.pg
 ```
 
 See [`plugins/`](plugins/) for runnable examples -- filters, a splitter, a CSV
-reporter, and engine-driven blunder/puzzle finders -- and [`LUA.md`](LUA.md) for
-the plugin interface and an archetype catalog.
+reporter, engine-driven blunder/puzzle finders, and a composite statistical
+cheat screener (`cheat.lua`) -- and [`LUA.md`](LUA.md) for the plugin interface
+and an archetype catalog.
 
 ## Build
 
