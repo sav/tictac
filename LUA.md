@@ -803,6 +803,19 @@ maps to ±100000.
 if sf:cp(board, { depth = 18 }) < -300 then ... end   -- White is losing badly
 ```
 
+**`engine:policy(board[, limits])`**: Root move policy priors -- the engine's
+prior probability for each legal move, before search. Only engines that print
+them respond (an `lc0` net with `VerboseMoveStats`, e.g. a Maia network, where
+the prior is the modelled probability a human of that rating plays the move);
+other engines (Stockfish) return an empty table. `limits` defaults to
+`{ nodes = 1 }`, giving the raw policy head rather than a search.
+*Returns* a table mapping each UCI move to its prior in `[0, 1]`.
+
+```lua
+local maia = ctx.engine("lc0", { WeightsFile = "maia-1500.pb.gz" })
+local p = maia:policy(board)        -- { e2e4 = 0.34, d2d4 = 0.21, ... }
+```
+
 ### Writer
 
 An output sink -- a PGN/CSV/text file opened with
@@ -855,7 +868,7 @@ suite, so it stays working as the runtime moves. Invoke one with
 | `csv.lua` | Export one row per game: white, black, result, eco. | `csv.lua out=games.csv` |
 | `blunder.lua` | Tag moves whose eval swings by at least `drop` centipawns. Needs an engine. | `blunder.lua engine=stockfish depth=16 drop=200` |
 | `puzzle.lua` + `collect.lua` | Find a forced mate, hand the position downstream, then emit it. Needs an engine. | `puzzle.lua mate=3` then `collect.lua out=puzzles.epd` |
-| `cheat.lua` | Estimate the probability a player used engine help: several engine-correlation indicators folded into one posterior. Needs an engine; run at `-j1`. | `cheat.lua player=^Doe depth=18 multipv=5 report=out.txt` |
+| `cheat.lua` | Estimate the probability a player used engine help: several engine-correlation indicators, a scan for the most engine-like contiguous stretch (part-game assistance), and an optional Maia human-difficulty oracle (`maia=` lc0), folded into one posterior. Needs an engine; run at `-j1`. | `cheat.lua player=^Doe depth=18 multipv=5 maia=lc0 maia_dir=nets report=out.txt` |
 
 The `puzzle` -> `collect` pair is the cross-plugin handoff the pipeline value
 exists for: one plugin selects a position and attaches data, the next reads it.
