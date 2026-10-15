@@ -109,6 +109,14 @@ thread blocking on a single read.
   (Explored in the dropped PR #2 on branch `sav/old//uci-engine-adapter`, against a since
   -drifted `uci::UciEngine`/reproc++ design; re-implement over the current `Engine`.)
 
+- **Verify `Engine::policy` against a live lc0.** `policy()` and the `info string
+  <move> ... (P: NN.NN%)` parser in `parsePolicy` were written to lc0's documented
+  VerboseMoveStats format but have not been run against an actual lc0 build (none was
+  available when added). Confirm the field layout across lc0 versions -- especially that
+  the move is the first `info string` token and that no summary line slips through
+  `isUciMove` -- and that `go nodes 1` yields the raw policy head. Add a round-trip test
+  with a canned lc0 transcript.
+
 ## Plugins
 
 - **`setup`/`teardown` hooks that run once for the whole run.** Under `-j N` both `init`
@@ -142,3 +150,32 @@ thread blocking on a single read.
   because its CMakeLists predates CMake 3.5. Check whether a newer walterschell/Lua tag
   raises its own `cmake_minimum_required`, and if so bump the `v5.4.5` pin and drop the
   save/force/restore shim entirely.
+
+## cheat.lua screener
+
+`plugins/cheat.lua` ships several engine-correlation indicators folded into one
+posterior, plus a within-game localized-assistance scan and an optional Maia
+human-difficulty oracle (`maia=`). These extensions were deliberately left out
+and are worth adding:
+
+- **Per-player Maia banding.** The Maia oracle loads one network, banded to the
+  first target move's Elo, and reuses it for the whole run (`ctx.engine` also memoizes
+  the engine by binary path, so a second band through the same `lc0` would collide).
+  A run that screens players across different rating bands should load the network
+  nearest each player's Elo. Needs `ctx.engine` keyed by path+options, or a per-player
+  engine handle, plus switching `WeightsFile` without reloading the net each move.
+- **Maia oracle is unvalidated end-to-end.** The `z_maia` indicator was validated
+  offline against the `maia2` Python model, not against the shipped `lc0`+Maia UCI path
+  (which depends on `Engine::policy`, itself untested -- see Engine). Once lc0 is wired,
+  confirm `z_maia` matches the offline computation on a known game.
+- **Multi-depth agreement.** Analyse each position at a shallow and a deep depth and
+  test whether the player's moves track the deep-only best more than an honest player
+  would -- a signature of a strong engine specifically, not just good play. Doubles the
+  engine cost, so gate it behind an argument.
+- **Clock-model signal beyond correlation.** The move-time indicator is only a
+  time-vs-difficulty correlation. Add an explicit per-move time model (expected think
+  time vs observed), flagging hard moves played near-instantly and suspiciously flat
+  time distributions.
+- **Posterior calibration from labelled data.** The combined-z -> posterior mapping is a
+  documented logistic heuristic. If a labelled set of clean/assisted players becomes
+  available, fit the slope/prior instead of hardcoding `beta`/`prior`.

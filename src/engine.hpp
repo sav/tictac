@@ -41,6 +41,14 @@ struct AnalysisLimits {
     int multipv = 1;
 };
 
+// One legal move's root policy prior, before search. lc0 exposes these through
+// VerboseMoveStats; for a Maia network the prior is the modelled probability a
+// human of that rating band plays the move.
+struct MovePrior {
+    std::string move;   // UCI
+    double prior = 0.0; // [0, 1]
+};
+
 // A UCI engine subprocess. Spawned on construction, terminated on destruction.
 class Engine final {
 public:
@@ -54,6 +62,12 @@ public:
 
     void setOption(std::string const &name, std::string const &value);
     [[nodiscard]] Analysis analyse(std::string const &fen, AnalysisLimits const &limits);
+
+    // Root move policy priors (lc0 VerboseMoveStats). One entry per legal move
+    // for an engine that emits "info string <move> ... (P: NN.NN%)" lines; an
+    // empty vector for one that does not (e.g. Stockfish). A bare read searches
+    // `nodes 1`, so the priors are the raw policy head rather than a search.
+    [[nodiscard]] std::vector<MovePrior> policy(std::string const &fen, AnalysisLimits const &limits);
 
 private:
     void send(std::string const &line);
