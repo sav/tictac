@@ -7,9 +7,12 @@
 
 #include <array>
 #include <cerrno>
+#include <charconv>
 #include <csignal>
 #include <cstddef>
 #include <format>
+#include <iterator>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
 #include <string_view>
@@ -180,6 +183,34 @@ InfoLine parseInfo(std::istringstream &iss, Analysis &overall) {
     return info;
 }
 
+bool isUciMove(std::string_view s) {
+    auto file = [](char c) { return c >= 'a' && c <= 'h'; };
+    auto rank = [](char c) { return c >= '1' && c <= '8'; };
+    if (s.size() < 4 || s.size() > 5) return false;
+    if (!(file(s[0]) && rank(s[1]) && file(s[2]) && rank(s[3]))) return false;
+    if (s.size() == 5 && s[4] != 'q' && s[4] != 'r' && s[4] != 'b' && s[4] != 'n') return false;
+    return true;
+}
+
+// Parse one lc0 per-move line, positioned just past the "info string" tokens:
+// "<move>  (NNN ) N: ... (P: NN.NN%) ...". Returns the move and its prior as a
+// fraction, or nullopt for a summary line or a non-lc0 engine's info string.
+std::optional<MovePrior> parsePolicy(std::istringstream &iss) {
+    std::string move;
+    if (!(iss >> move) || !isUciMove(move)) return std::nullopt;
+    std::string const rest((std::istreambuf_iterator<char>(iss)), std::istreambuf_iterator<char>());
+    auto at = rest.find("(P:");
+    if (at == std::string::npos) return std::nullopt;
+    at += 3;
+    while (at < rest.size() && rest[at] == ' ') ++at;
+    auto end = rest.find('%', at);
+    if (end == std::string::npos) return std::nullopt;
+    double pct = 0.0;
+    auto [ptr, ec] = std::from_chars(rest.data() + at, rest.data() + end, pct);
+    if (ec != std::errc{}) return std::nullopt;
+    return MovePrior{move, pct / 100.0};
+}
+
 void collect(Analysis &result, std::vector<AnalysisLine> const &lines, int multipv) {
     result.score = lines[0].score;
     result.mate = lines[0].mate;
@@ -224,6 +255,31 @@ Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
     }
     detail::collect(result, lines, limits.multipv);
     return result;
+}
+
+std::vector<MovePrior> Engine::policy(std::string const &fen, AnalysisLimits const &limits) {
+    // VerboseMoveStats makes lc0 print one "info string" per legal move with its
+    // policy prior. It is an unknown option elsewhere (e.g. Stockfish), which is
+    // harmless: such an engine emits no matching lines and the result is empty.
+    setOption("VerboseMoveStats", "true");
+    syncReady();
+    send("position fen " + fen);
+    AnalysisLimits lim = limits;
+    if (!lim.depth && !lim.movetime && !lim.nodes) lim.nodes = 1; // raw policy head
+    send(detail::goCommand(lim));
+
+    std::vector<MovePrior> priors;
+    for (;;) {
+        std::istringstream iss(readLine());
+        std::string tok;
+        iss >> tok;
+        if (tok == "bestmove") break;
+        if (tok != "info") continue;
+        iss >> tok;
+        if (tok != "string") continue;
+        if (auto mp = detail::parsePolicy(iss)) priors.push_back(std::move(*mp));
+    }
+    return priors;
 }
 
 void Engine::send(std::string const &line) {

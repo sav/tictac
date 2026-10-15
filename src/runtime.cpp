@@ -574,6 +574,16 @@ void registerEngine(sol::state_view lua) {
             sol::state_view l(ts);
             return analysisToTable(l, e.analyse(b.board.getFen(), readLimits(limits)));
         },
+        "policy", [](Engine &e, LuaBoard &b, sol::optional<sol::table> limits, sol::this_state ts) {
+            // Root policy priors as { [uci] = prob }. Empty for an engine that
+            // does not emit them (e.g. Stockfish); meant for an lc0/Maia net.
+            sol::state_view l(ts);
+            AnalysisLimits lim;
+            if (limits) lim = readLimits(*limits);
+            sol::table t = l.create_table();
+            for (auto const &mp : e.policy(b.board.getFen(), lim)) t[mp.move] = mp.prior;
+            return t;
+        },
         "bestmove", [](Engine &e, LuaBoard &b, sol::table limits) {
             return e.analyse(b.board.getFen(), readLimits(limits)).bestmove;
         },
