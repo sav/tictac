@@ -15,7 +15,6 @@ local plugin = {
 
 function plugin.init(ctx)
   ctx.scope.w = ctx.open(ctx.args:get("out", "games.csv"))
-  ctx.scope.w:write("white,black,result,eco\n")
 end
 
 function plugin.process(input, ctx)

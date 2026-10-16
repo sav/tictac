@@ -36,7 +36,7 @@ flowchart LR
 ## 2. Command-line surface
 
 ```sh
-tictac --file <db.pgn> [--plugin <spec>]... [--output <file>] [--on-error <mode>]
+tictac --file <db.pgn> [--plugin <spec>]... [--output <file>] [--on-error <mode>] [--jobs <n>]
 ```
 
 | Flag | Meaning |
@@ -45,6 +45,7 @@ tictac --file <db.pgn> [--plugin <spec>]... [--output <file>] [--on-error <mode>
 | `--plugin`, `-p` | A plugin spec (see below). Repeatable; defines pipeline order. |
 | `--output`, `-o` | Where surviving games are written (default: stdout, PGN). `-` = stdout, omit with `--no-output`. |
 | `--no-output` | Discard the default game stream (useful for pure reporters). |
+| `--jobs`, `-j` | Games to process in parallel (default `1`; `0` = one per CPU). Each worker gets its own Lua state and its own copy of every plugin -- see [§8](#8-execution-semantics). |
 | `--on-error` | `abort` \| `drop` \| `pass` (default `abort`) -- how a plugin's failing `process()` is handled: `abort` halts the run, `drop` drops the game, `pass` passes it through unchanged; all three log the error. A failing `init` always aborts. |
 
 ### Plugin spec & arguments
@@ -217,11 +218,12 @@ It is how a plugin talks to tictac.
 | Member | Description |
 |--------|-------------|
 | `ctx.args` | This plugin's parsed CLI arguments (see accessors below). |
-| `ctx.shared` | A table shared by **all** plugins and **all** games -- global accumulator / cross-plugin channel. |
 | `ctx.scope` | A table private to **this** plugin instance -- its own scratch space, persisting across hooks. |
 | `ctx.index` | 1-based index of the current game in the database (valid in `process`). |
+| `ctx.worker` | 1-based index of the worker running this pipeline; always `1` without `--jobs`. Gate a one-off write to a shared file with `if ctx.worker == 1 then`. |
+| `ctx.workers` | Total number of workers (the resolved `--jobs`); `1` by default. |
 | `ctx.engine(path, opts)` | Create / fetch a [UCI engine](#engine) handle (managed & auto-closed). |
-| `ctx.open(path, mode?)` | Open a [Writer](#writer) (managed & auto-closed). `mode`: `"w"` (default, truncates) / `"a"` (append); any other value is an error. Reopening the same path truncates -- use `"a"` to append. |
+| `ctx.open(path, mode?)` | Open a [Writer](#writer) (managed & auto-closed). `mode`: `"w"` (default, truncates) / `"a"` (append); any other value is an error. A path already open hands back **the same writer** instead of truncating it, so two plugins can share one file; reopening it with the *other* mode is an error. |
 | `ctx.out` | The default output [Writer](#writer) (honours `--output`); **`nil` under `--no-output`**, so guard with `if ctx.out then`. Write to it mid-pipeline with `ctx.out:writeGame(game)`. |
 | `ctx.log` | `ctx.log.info/warn/error/debug(fmt, ...)` -- structured logging prefixed with plugin + game index. |
 
@@ -299,7 +301,9 @@ end
 
 - **`input.data`** → per-game, flows *down* the pipeline (stage to stage).
 - **`ctx.scope`** → per-plugin, persists *across games* (this plugin only).
-- **`ctx.shared`** → global, persists across games *and* plugins.
+
+Under `-j N` both of those are per worker as well; only `ctx.out` and the
+`ctx.open` writers are shared across workers.
 
 ---
 
@@ -847,10 +851,8 @@ suite, so it stays working as the runtime moves. Invoke one with
 |--------|--------------|--------------|
 | `filter.lua` | Keep games whose headers match: any `key=pattern` names a header (case-insensitive), plus `player`/`min_elo`. | `filter.lua event=London player=^Carlsen min_elo=2700` |
 | `position.lua` | Forward the first position whose FEN starts with a prefix, as the board cursor. | `position.lua fen=rnbqkbnr` |
-| `dedup.lua` | Drop games already seen this run, keyed by serialized PGN. | `dedup.lua` |
 | `split.lua` | Write each game to its own file, grouped by a header value. | `split.lua by=ECO dir=out/` |
 | `csv.lua` | Export one row per game: white, black, result, eco. | `csv.lua out=games.csv` |
-| `histogram.lua` | Tally games per header value; emit a sorted table in `finish`. | `histogram.lua by=ECO` |
 | `blunder.lua` | Tag moves whose eval swings by at least `drop` centipawns. Needs an engine. | `blunder.lua engine=stockfish depth=16 drop=200` |
 | `puzzle.lua` + `collect.lua` | Find a forced mate, hand the position downstream, then emit it. Needs an engine. | `puzzle.lua mate=3` then `collect.lua out=puzzles.epd` |
 
@@ -883,18 +885,17 @@ end
 
 These show further possibilities the interface allows but do not ship as
 plugins: each leans on data or a helper tictac does not provide (an opening
-book, a position classifier, a shared tree), so read them as pseudocode rather
-than runnable files.
+book, a position classifier, a trie), so read them as pseudocode rather than
+runnable files.
 
 #### ECO tagger
 
 Look each game up in an opening book and stamp the ECO/Opening headers.
-`ctx.shared.eco_book` is whatever lookup table the host or an earlier plugin
-loaded.
+`ctx.scope.eco_book` is whatever lookup table the plugin loaded in `init`.
 
 ```lua
 function plugin.process(input, ctx)
-  local eco = ctx.shared.eco_book:lookup(input.game)
+  local eco = ctx.scope.eco_book:lookup(input.game)
   input.game:setHeader("ECO", eco.code)
   input.game:setHeader("Opening", eco.name)
   return input
@@ -918,12 +919,12 @@ end
 
 #### Opening tree (aggregate)
 
-Fold every game's first moves into a shared trie, then serialize it in `finish`.
-`ctx.shared.tree` is a node structure the plugin maintains itself.
+Fold every game's first moves into a trie, then serialize it in `finish`.
+`ctx.scope.tree` is a node structure the plugin maintains itself.
 
 ```lua
 function plugin.process(input, ctx)
-  local node = ctx.shared.tree
+  local node = ctx.scope.tree
   for i, mv in ipairs(input.game:moves()) do
     if i > 12 then break end
     node = node:child(mv:san())
@@ -931,7 +932,7 @@ function plugin.process(input, ctx)
   end
   return input
 end
--- finish: serialize ctx.shared.tree to JSON/PGN.
+-- finish: serialize ctx.scope.tree to JSON/PGN.
 ```
 
 ---
@@ -951,6 +952,25 @@ end
 7. After all games (or after a `"stop"`/`"abort"`), each plugin's `finish` runs
    **in pipeline order**.
 8. All managed engines and writers are closed.
+
+### Parallel runs (`--jobs`)
+
+`-j N` runs N independent copies of the whole pipeline, one per worker thread,
+because a Lua state cannot be entered by two threads. At the default `-j1` the
+behavior above is exact. Above it:
+
+- **Everything in `ctx` is per worker.** `init` and `finish` each run N times and
+  `ctx.scope` is private to one worker. A plugin that aggregates over the
+  database (a histogram, a dedup table) sees only the games its own worker
+  handled, so run those at `-j1`. `ctx.out` and `ctx.open` writers are the
+  exception: they are shared, and each `write`/`writef`/`writeGame` call is
+  atomic against other workers.
+- **Games are written in completion order**, not input order.
+- **A `"stop"` or `"abort"` stops feeding the pool at once**, but up to N-1 games
+  already in flight still run to completion and are emitted. One further game is
+  also parsed (and discarded) before the reader notices.
+- **Under `--on-error abort` the reported error is whichever worker failed
+  first**, and games that had not started are dropped.
 
 ### Errors
 

@@ -9,8 +9,6 @@
 #include <cerrno>
 #include <csignal>
 #include <cstddef>
-#include <cstdio>
-#include <cstring>
 #include <format>
 #include <sstream>
 #include <stdexcept>
@@ -37,10 +35,44 @@ void ignoreSigPipeOnce() {
     }();
 }
 
+// What the child prints when exec fails. The text is rendered before the fork
+// because between fork() and exec the child may only call async-signal-safe
+// functions: with worker threads in play, another thread can hold the stdio or
+// malloc lock at fork time, and the child would deadlock there still holding
+// the pipe write end open -- hanging the parent's read instead of giving it EOF.
+class ExecError {
+public:
+    explicit ExecError(std::string const &path)
+        : text_(std::format("engine: exec '{}' failed, errno ", path)), prefix_(text_.size()) {
+        text_.resize(prefix_ + 24); // the digits and a newline, filled in by report()
+    }
+
+    // Async-signal-safe: decimal conversion into the already-sized buffer, then
+    // one write. Best effort on the way to _exit, so nothing is checked.
+    void report(int err) noexcept {
+        std::array<char, 16> digits{};
+        std::size_t first = digits.size();
+        unsigned value = static_cast<unsigned>(err);
+        do {
+            digits[--first] = static_cast<char>('0' + value % 10);
+            value /= 10;
+        } while (value != 0);
+        std::size_t at = prefix_;
+        for (std::size_t i = first; i < digits.size(); ++i) text_[at++] = digits[i];
+        text_[at++] = '\n';
+        [[maybe_unused]] ssize_t const n = ::write(STDERR_FILENO, text_.data(), at);
+    }
+
+private:
+    std::string text_;
+    std::size_t prefix_;
+};
+
 } // namespace
 
 Engine::Engine(std::string const &path, std::unordered_map<std::string, std::string> const &options) {
     ignoreSigPipeOnce();
+    ExecError exec_error(path);    // built here: the child cannot format anything itself
     std::array<int, 2> in_pipe{};  // parent -> child stdin
     std::array<int, 2> out_pipe{}; // child stdout -> parent
     // O_CLOEXEC so a later engine's child does not inherit these fds; otherwise it
@@ -72,8 +104,8 @@ Engine::Engine(std::string const &path, std::unordered_map<std::string, std::str
         ::execlp(path.c_str(), path.c_str(), static_cast<char *>(nullptr));
         // Only reached when exec fails; report why before the parent sees EOF.
         // No throw: unwinding would run the parent's handlers, destructors and
-        // atexit hooks in the child too, so print and _exit instead.
-        std::fprintf(stderr, "engine: exec %s: %s\n", path.c_str(), std::strerror(errno));
+        // atexit hooks in the child too, so report and _exit instead.
+        exec_error.report(errno);
         ::_exit(127);
     }
     ::close(in_pipe[0]);

@@ -17,6 +17,8 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release)
 endif()
 
+find_package(Threads REQUIRED)
+
 # CLI11 for command-line argument parsing. Pulled in at configure time so the
 # build is self-contained and does not depend on a system-installed copy.
 include(FetchContent)
@@ -69,6 +71,7 @@ add_executable(tictac
   src/app.cpp
   src/game.cpp
   src/engine.cpp
+  src/pool.cpp
   src/runtime.cpp
 )
 target_compile_definitions(tictac PRIVATE
@@ -77,11 +80,22 @@ target_compile_definitions(tictac PRIVATE
   # since the runtime already catches and reports every plugin error itself.
   SOL_PRINT_ERRORS=0
   TICTAC_VERSION="${TICTAC_VERSION}")
-target_link_libraries(tictac PRIVATE CLI11::CLI11 lua_static)
+target_link_libraries(tictac PRIVATE CLI11::CLI11 lua_static Threads::Threads)
 target_include_directories(tictac SYSTEM PRIVATE
   ${chesslib_SOURCE_DIR}/include
   ${sol2_SOURCE_DIR}/include
 )
+
+# Opt-in sanitizers. ThreadSanitizer is the one that matters here: the worker
+# pool, the writer mutex and the writer registry are what it is meant to check.
+# Needs the compiler's sanitizer runtime installed (libclang-rt-<v>-dev on
+# Debian/Ubuntu for Clang).
+set(TICTAC_SANITIZER "" CACHE STRING "Sanitizer to build with: thread | address | undefined")
+set_property(CACHE TICTAC_SANITIZER PROPERTY STRINGS "" thread address undefined "address,undefined")
+if(TICTAC_SANITIZER)
+  target_compile_options(tictac PRIVATE -fsanitize=${TICTAC_SANITIZER} -fno-omit-frame-pointer -g)
+  target_link_options(tictac PRIVATE -fsanitize=${TICTAC_SANITIZER})
+endif()
 
 if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(tictac PRIVATE -Wall -Wextra -Wpedantic -Wshadow

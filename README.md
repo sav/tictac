@@ -44,7 +44,7 @@ lifecycle hooks -- `init` (once, at startup), `process` (once per game), and
 ## Usage
 
 ```sh
-tictac --file <db.pgn> --plugin <spec>... [--output <file>] [--on-error <mode>]
+tictac --file <db.pgn> --plugin <spec>... [--output <file>] [--on-error <mode>] [--jobs <n>]
 ```
 
 | Flag | Meaning |
@@ -53,6 +53,7 @@ tictac --file <db.pgn> --plugin <spec>... [--output <file>] [--on-error <mode>]
 | `-p`, `--plugin` | A plugin spec: `"file.lua key=value ..."`. Required; repeatable; defines pipeline order. |
 | `-o`, `--output` | Where surviving games are written (default: stdout, PGN). |
 | `--no-output` | Discard the default game stream (useful for pure reporters). |
+| `-j`, `--jobs` | Games to process in parallel (default `1`; `0` = one per CPU). Each worker runs its own copy of the whole plugin chain, so above `1` games are written in completion order rather than input order -- see [Limitations](#limitations). |
 | `--on-error` | `abort` \| `drop` \| `pass` (default `abort`) -- how a plugin's failing `process()` is handled: `abort` halts the run, `drop` drops the game, `pass` passes it through unchanged; all three log the error. A failing `init` always aborts. |
 
 For example, keep only Fischer's white games and write them out:
@@ -61,9 +62,9 @@ For example, keep only Fischer's white games and write them out:
 tictac --file games.pgn --plugin "filter.lua white=^Fischer" --output fischer.pgn
 ```
 
-See [`plugins/`](plugins/) for runnable examples -- filters, a deduplicator, a
-splitter, CSV and histogram reporters, and engine-driven blunder/puzzle finders
--- and [`LUA.md`](LUA.md) for the plugin interface and an archetype catalog.
+See [`plugins/`](plugins/) for runnable examples -- filters, a splitter, a CSV
+reporter, and engine-driven blunder/puzzle finders -- and [`LUA.md`](LUA.md) for
+the plugin interface and an archetype catalog.
 
 ## Build
 
@@ -85,7 +86,13 @@ The test suite drives the built `tictac` binary through
 a small Lua plugin (under [`tests/plugins/`](tests/plugins/)) over a PGN fixture
 (under [`tests/fixtures/`](tests/fixtures/)) and asserts the plugin contract --
 every return type (valid and invalid), `input.data` flowing down the pipeline,
-per-plugin `ctx.scope`, global `ctx.shared`, and the Game/Board/Move API.
+per-plugin `ctx.scope`, and the Game/Board/Move API.
+
+Parallel runs are covered too: `-j1` must stay byte-identical to a sequential
+run, while `-j4`/`-j8` are compared as a multiset of lines (completion order is
+not fixed) to catch a lost, duplicated or torn record. Separate cases pin the
+bounded stop, an abort raised on a worker travelling back intact, and two stages
+sharing one `ctx.open` file across every worker.
 
 Malformed PGN is covered too: an unparseable or ambiguous SAN token abandons
 just that game, and a parse error from the reader keeps everything read before
@@ -153,8 +160,15 @@ along with what implementing them would take.
 - **`meta.args` is declarative only.** A plugin's argument schema is not
   validated, and there is no per-plugin `--help`; `ctx.args` accessors need an
   explicit default at the call site.
-- **Single-threaded, whole-file input.** Games are processed sequentially and the
-  input is read from files only (no stdin, no streaming).
+- **Whole-file input.** Input is read from files only (no stdin, no streaming).
+- **Parallelism is per game, not per plugin.** A Lua state cannot be shared
+  between threads, so `-j N` gives each worker its own copy of the entire plugin
+  chain. `init` and `finish` therefore run once *per worker*, `ctx.scope` is per
+  worker, and a plugin that engages an engine spawns one subprocess per worker
+  (set the engine's own `Threads` option accordingly, or the two levels of
+  parallelism will oversubscribe the machine). A plugin that aggregates across
+  the whole database (a histogram, a dedup table) only produces a single correct
+  result at `-j1`. Games are written in completion order above `-j1`.
 
 ## License
 

@@ -5,17 +5,11 @@ nothing gets silently lost.
 
 ## Concurrency
 
-These three are pieces of one async pipeline and are best designed together: parallel
-workers spread games across threads, the non-blocking engine API lets each worker keep
-several analyses in flight instead of blocking per position, and readiness-based I/O
+`-j`/`--jobs` now spreads games across a pool of workers. These two remaining pieces
+are best designed together: the non-blocking engine API lets each worker keep several
+analyses in flight instead of blocking per position, and readiness-based I/O
 multiplexing (`poll`/`epoll`) lets a single event loop drive many engines without any
 thread blocking on a single read.
-
-- **Parallel game workers (`-j`/`--jobs`).** `Runtime::run` processes games
-  sequentially. Add a parallel execution path (thread pool / `std::execution` policy)
-  that reads games one at a time and dispatches each to a worker, multiplexing the input
-  across pipelines that converge on the same output -- synchronizing writes so concurrent
-  workers never overlap or corrupt the format.
 
 - **Non-blocking engine API.** `Engine::analyse` blocks the caller until the engine
   reports `bestmove`, so one thread can drive only a single position at a time and cannot
@@ -32,6 +26,27 @@ thread blocking on a single read.
   multiplexes several engines' output streams for the async API above.
 
 ## Runtime
+
+- **Cross-worker aggregation via `ctx.global`.** A Lua state cannot be shared between
+  threads, so under `-j N` each worker owns a whole pipeline: `ctx.scope` is private to
+  it, `finish` runs once per worker, and anything accumulated across games is per worker.
+  Aggregating plugins (a histogram, a dedup table) are therefore only correct at `-j1`,
+  which is why none ship under `plugins/`. Add a `ctx.global` table owned by the runtime
+  rather than by any worker's Lua state, with every access serialized and values crossing
+  the boundary as deep-copied plain data. A synchronized table alone cannot make
+  read-modify-write atomic, so it needs a compare-and-set primitive (or a `finish`-time
+  merge hook) alongside it. This is what the removed `ctx.shared` gestured at without ever
+  being safe for it.
+
+- **Leveled logging with `-v`/`-q`.** The runtime never says what it is doing: nothing
+  reports how many workers `-j` resolved to, which plugins loaded and in what order, which
+  file is being parsed, or which hook is running on which worker. Add a leveled logger
+  writing to stderr, with a repeatable `-v` raising the level (info, debug, trace), a `-q`
+  dropping it to errors only, and the two rejected together. Both short flags are free --
+  `--version` has no `-v` form. `ctx.log` already prints `[plugin:index] level: msg` at
+  four levels but is ungated, so the same threshold should gate it and the runtime's own
+  lines should match its format. Everything goes to stderr: stdout carries the games under
+  the default `--output -`.
 
 - **Read PGNs from stdin.** Accept PGN input on standard input and process games as
   they arrive.
@@ -70,6 +85,12 @@ thread blocking on a single read.
 
 ## Engine
 
+- **Share engines across workers.** `ctx.engine` memoizes per plugin instance, and `-j N`
+  gives every worker its own instance, so N workers spawn N subprocesses per engine path.
+  Each engine also has its own `Threads` option, so the two levels of parallelism multiply
+  and oversubscribe the machine unless the user tunes them by hand. A pooled engine behind
+  the non-blocking API above would let the workers share a fixed set instead.
+
 - **`EINTR` tears down the engine session.** `Engine::send` and `Engine::readLine` treat
   any `n <= 0` from `::write`/`::read` as fatal. A signal delivered mid-call makes the
   syscall return -1 with `errno == EINTR`, which is retryable rather than an error, so a
@@ -89,6 +110,17 @@ thread blocking on a single read.
   -drifted `uci::UciEngine`/reproc++ design; re-implement over the current `Engine`.)
 
 ## Plugins
+
+- **`setup`/`teardown` hooks that run once for the whole run.** Under `-j N` both `init`
+  and `finish` run once *per worker*, so neither can emit a one-off header or footer on a
+  shared `ctx.open` writer: nothing orders one worker's `init` against another's first
+  `process`, which is why `csv.lua` no longer writes a header row. Add an optional
+  `setup(ctx)` called exactly once before any pipeline's `init`, and a matching
+  `teardown(ctx)` after every `finish`. Both run on the main thread with no worker in
+  flight, so they need no synchronization, and a writer `setup` opens reaches the
+  pipelines through the existing `WriterRegistry`. Open question: whether they get worker
+  1's `ctx` or a dedicated one whose `ctx.scope` no worker can see. When this lands, move
+  `csv.lua`'s header row back, into `setup`, and restore it in `tests/expected/ex_csv.csv`.
 
 - **Argument schema validation and `--help`.** Plugins may declare a `meta.args` schema
   (`type`/`default`/`help`) plus `meta.version`/`meta.description`, and LUA.md says the
