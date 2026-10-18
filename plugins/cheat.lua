@@ -14,7 +14,8 @@
 --     "cheat.lua engine=stockfish player=^Doe depth=18 multipv=5 report=out.txt"
 --
 -- This is a screening tool, not proof. Read the caveats printed in the report.
--- Aggregates across the whole database, so run it at -j1.
+-- Aggregates across the whole database via partial/reduce, so it runs at any
+-- -j N and prints the same report; pair with --engines to cap engine processes.
 
 local plugin = {
   meta = {
@@ -49,9 +50,14 @@ local plugin = {
       beta        = { type = "number", default = 0.9, help = "Logistic slope mapping the combined z to the posterior." },
       cal_a       = { type = "number", default = 561, help = "Built-in Elo(tau) intercept: Elo = cal_a + cal_b*ln(1/tau)." },
       cal_b       = { type = "number", default = 521, help = "Built-in Elo(tau) slope." },
+      disp_rate   = { type = "number", default = 0.06, help = "Between-player SD of the top-1/clean/hard-move match rate among honest peers (overdispersion). Caps the rate z-scores so they measure how extreme a player is, not how many moves were seen." },
+      disp_acpl   = { type = "number", default = 20,   help = "Between-player SD of mean centipawn loss (cp) among honest peers; overdispersion term for the cp-loss z." },
+      disp_exc    = { type = "number", default = 0.05, help = "Between-player SD of mean Maia excellence among honest peers; overdispersion term for the Maia z." },
+      disp_elo    = { type = "number", default = 200,  help = "Irreducible SD (Elo) between a player's intrinsic and stated rating; floors the IPR z." },
       report      = { type = "string",                help = "Report path (default: stdout via ctx.out, else stderr log)." },
       csv         = { type = "string",                help = "Optional machine-readable one-row-per-player CSV." },
       annotate    = { type = "bool",   default = false, help = "Tag each analysed move with its centipawn loss as a PGN comment." },
+      suspects    = { type = "number", default = 10, help = "List the N most suspicious individual moves per player in the report (0 disables)." },
     },
   },
 }
@@ -272,6 +278,17 @@ local function move_seconds(mv)
   return nil
 end
 
+-- The game's URL for the report. Lichess puts it in [Site]; chess.com puts the
+-- literal "Chess.com" in [Site] and the real URL in [Link]. Prefer whichever
+-- header is an http(s) URL, and give nothing when neither is.
+local function game_url(game)
+  local site = game:header("Site")
+  local link = game:header("Link")
+  if link and link:match("^https?://") then return link end
+  if site and site:match("^https?://") then return site end
+  return nil
+end
+
 -- Build the per-move evidence record from an engine result at board_before and
 -- the move actually played. Returns { lwp, lcp, chosen } or nil when the
 -- position is unusable (no candidates, or decided and skipped).
@@ -430,9 +447,10 @@ local function evaluate(pl, honest_tau, args)
   local E_match, V_match = 0, 0
   local E_cp, V_cp = 0, 0
   local E_clean, V_clean = 0, 0
-  local E_hw, V_hw, O_hw = 0, 0, 0   -- hard-move weighted match
+  local E_hw, V_hw, O_hw, S_hw = 0, 0, 0, 0   -- hard-move weighted match (S_hw = sum of weights)
   local times, diffs = {}, {}
   local mi, pe, gid, mvno = {}, {}, {}, {}   -- per-move series for the segment scan
+  local susp = {}                             -- per-move suspicion, ranked for the report
   for _, m in ipairs(moves) do
     local p = detail.choice_probs(m.lwp, honest_tau)
     local pm, ec, ec2, pc = 0, 0, 0, 0
@@ -447,12 +465,16 @@ local function evaluate(pl, honest_tau, args)
     E_match = E_match + pm;        V_match = V_match + pm * (1 - pm)
     E_clean = E_clean + pc;        V_clean = V_clean + pc * (1 - pc)
     E_cp    = E_cp + ec;           V_cp    = V_cp + (ec2 - ec * ec)
-    E_hw    = E_hw + pm * w;       V_hw    = V_hw + w * w * pm * (1 - pm)
+    E_hw    = E_hw + pm * w;       V_hw    = V_hw + w * w * pm * (1 - pm);  S_hw = S_hw + w
     if hit then O_hw = O_hw + w end
     if m.time then times[#times + 1] = m.time; diffs[#diffs + 1] = w end
     local k = #mi + 1
     mi[k], pe[k] = hit and 1 or 0, pm
     gid[k], mvno[k] = m.gi or 1, m.movno or 0
+    -- Per-move suspicion: the hard-move match contribution w*(hit - pm) -- high
+    -- when the player found the best move in a position an honest peer rarely
+    -- solves. Replaced by the Maia excellence excess below when a prior exists.
+    susp[k] = { m = m, pm = pm, score = w * ((hit and 1 or 0) - pm) }
   end
 
   -- Localized-assistance scan: the strongest contiguous within-game stretch,
@@ -477,7 +499,9 @@ local function evaluate(pl, honest_tau, args)
   -- their own, and only genuinely hard moves that were found push the z up.
   local O_e, E_e, V_e, maia_n, ph_sum = 0, 0, 0, 0, 0
   local hard = nil
+  local mj = 0
   for _, m in ipairs(moves) do
+    mj = mj + 1
     if m.priors then
       maia_n = maia_n + 1
       local ee, ee2, sum_pr = 0, 0, 0
@@ -504,6 +528,11 @@ local function evaluate(pl, honest_tau, args)
       E_e = E_e + ee
       V_e = V_e + math.max(0, ee2 - ee * ee)
       ph_sum = ph_sum + p_played
+      -- With a human prior in hand, rank this move by excellence excess instead:
+      -- how much more excellent the played move is than Maia expects of a peer.
+      susp[mj].score = e_played - ee
+      susp[mj].maia = true
+      susp[mj].pplayed = p_played
       -- the hardest excellent move actually found: lowest human-probability
       -- among near-best moves played
       if e_played >= 0.8 and (not hard or p_played < hard.p) then
@@ -516,16 +545,27 @@ local function evaluate(pl, honest_tau, args)
     out.maia_band = pl.maia_band
     out.maia_mean_ph = ph_sum / maia_n
     out.maia_hard = hard
-    if V_e > 0 then out.z_maia = (O_e - E_e) / math.sqrt(V_e) end
+    local V_e_eff = V_e + (maia_n * args.disp_exc) ^ 2
+    if V_e_eff > 0 then out.z_maia = (O_e - E_e) / math.sqrt(V_e_eff) end
   end
 
-  local function z(obs, e, v) return v > 0 and (obs - e) / math.sqrt(v) or 0 end
+  -- Standardize against an OVERDISPERSED null: binomial (within-player) variance
+  -- plus a between-player term (weight*SD)^2. Honest players of one rating band
+  -- vary among themselves, and the honest model is only an approximation, so the
+  -- real null spread is wider than binomial. Without this term a constant per-move
+  -- bias b makes z grow like sqrt(n), and every player with enough moves trips the
+  -- threshold; with it z converges to b/SD, a genuine effect size.
+  local function z(obs, e, v, weight, sd)
+    v = v + (weight * sd) ^ 2
+    return v > 0 and (obs - e) / math.sqrt(v) or 0
+  end
+  local dr = args.disp_rate
   out.exp_match = E_match / n
   out.exp_acpl  = E_cp / n
-  out.z_match = z(obs_match, E_match, V_match)          -- more top matches than honest
-  out.z_acpl  = z(E_cp, obs_cp, V_cp)                   -- less loss than honest (sign flipped)
-  out.z_clean = z(obs_clean, E_clean, V_clean)          -- more near-perfect moves
-  out.z_cplx  = z(O_hw, E_hw, V_hw)                      -- matches concentrated on hard moves
+  out.z_match = z(obs_match, E_match, V_match, n, dr)       -- more top matches than honest
+  out.z_acpl  = z(E_cp, obs_cp, V_cp, n, args.disp_acpl)    -- less loss than honest (sign flipped)
+  out.z_clean = z(obs_clean, E_clean, V_clean, n, dr)       -- more near-perfect moves
+  out.z_cplx  = z(O_hw, E_hw, V_hw, S_hw, dr)               -- matches concentrated on hard moves
 
   -- Move-time regularity: honest players spend longer on harder positions, so
   -- a non-positive time/difficulty correlation is the suspicious direction.
@@ -548,8 +588,41 @@ local function evaluate(pl, honest_tau, args)
   if pl.elo_n > 0 and se then
     local stated = pl.elo_sum / pl.elo_n
     out.stated_elo = stated
-    local se_elo = args.cal_b * se / tau                  -- delta method on Elo(tau)
+    -- Delta method on Elo(tau), floored by the irreducible between-player spread
+    -- (disp_elo): a player's intrinsic and stated ratings legitimately differ by a
+    -- couple hundred Elo, so without this floor the IPR z also grows like sqrt(n).
+    local se_elo = math.sqrt((args.cal_b * se / tau) ^ 2 + args.disp_elo ^ 2)
     out.z_ipr = se_elo > 0 and (out.ipr - stated) / se_elo or 0
+  end
+
+  -- The N most engine-like individual moves, strongest first. Only moves whose
+  -- suspicion is positive (more engine-like than the honest baseline) qualify,
+  -- so a clean player can yield fewer than N or none at all.
+  if args.suspects > 0 and #susp > 0 then
+    -- A total order by move content, not by processing order: worker order (and
+    -- the per-worker game renumbering) must not change which ties are listed, so
+    -- the report stays byte-identical between -j1 and -j N.
+    local function uci_of(m) return m.ucis and m.ucis[m.chosen] or "" end
+    table.sort(susp, function(x, y)
+      if x.score ~= y.score then return x.score > y.score end
+      if x.pm ~= y.pm then return x.pm < y.pm end
+      local mx, my = x.m, y.m
+      if (mx.movno or 0) ~= (my.movno or 0) then return (mx.movno or 0) < (my.movno or 0) end
+      if (mx.side or "") ~= (my.side or "") then return (mx.side or "") < (my.side or "") end
+      if (mx.gtag or "") ~= (my.gtag or "") then return (mx.gtag or "") < (my.gtag or "") end
+      return uci_of(mx) < uci_of(my)
+    end)
+    local list = {}
+    for _, su in ipairs(susp) do
+      if su.score <= 0 or #list >= args.suspects then break end
+      local m = su.m
+      list[#list + 1] = {
+        movno = m.movno or 0, san = m.san, uci = uci_of(m),
+        side = m.side, gtag = m.gtag, gurl = m.gurl, lcp = m.lcp[m.chosen],
+        pm = su.pm, maia = su.maia, pplayed = su.pplayed,
+      }
+    end
+    out.suspects = list
   end
   return out
 end
@@ -638,6 +711,10 @@ function plugin.init(ctx)
     beta         = ctx.args:number("beta", 0.9),
     cal_a        = ctx.args:number("cal_a", 561),
     cal_b        = ctx.args:number("cal_b", 521),
+    disp_rate    = math.max(0, ctx.args:number("disp_rate", 0.06)),
+    disp_acpl    = math.max(0, ctx.args:number("disp_acpl", 20)),
+    disp_exc     = math.max(0, ctx.args:number("disp_exc", 0.05)),
+    disp_elo     = math.max(0, ctx.args:number("disp_elo", 200)),
     seg_min      = math.max(3, ctx.args:number("seg_min", 6)),
     seg_max      = math.max(ctx.args:number("seg_min", 6), ctx.args:number("seg_max", 80)),
     seg_alpha    = ctx.args:number("seg_alpha", 0.001),
@@ -648,12 +725,9 @@ function plugin.init(ctx)
     maia_nodes   = math.max(1, ctx.args:number("maia_nodes", 1)),
     exc_cp       = math.max(1, ctx.args:number("exc_cp", 50)),
     annotate     = ctx.args:bool("annotate", false) == true,
+    suspects     = math.max(0, ctx.args:number("suspects", 10)),
   }
   s.maia = nil   -- lazily created on first target move, banded to its Elo
-
-  if ctx.workers and ctx.workers > 1 then
-    ctx.log.warn("cheat aggregates across games; run at -j1 for a correct report")
-  end
 end
 
 local function target_of(name, patterns)
@@ -696,9 +770,10 @@ function plugin.process(input, ctx)
     local fmn = before:fullmoveNumber()
     if fmn > a.book and #before:legalMoves() > 1 then
       local mover = before:sideToMove()
-      local name = (mover == "white") and white or black
-      local elo  = (mover == "white") and welo or belo
-      local is_target = (mover == "white") and wt or bt
+      local is_white = mover == "white"
+      local name = is_white and white or black
+      local elo  = is_white and welo or belo
+      local is_target = (is_white and wt) or ((not is_white) and bt)
       if is_target or a.reference then
         local ok, rec = pcall(build_record, s.sf, node, a)
         if ok and rec then
@@ -708,6 +783,10 @@ function plugin.process(input, ctx)
           if is_target then
             local p = get_player(name)
             rec.gi = p.games
+            rec.san = node.move:san()
+            rec.side = is_white and "White" or "Black"
+            rec.gtag = (white or "?") .. " vs " .. (black or "?")
+            rec.gurl = game_url(game)
             if a.maia then
               if not s.maia then
                 local wf, band = maia_weights_for(a, rec.elo)
@@ -746,9 +825,25 @@ function plugin.process(input, ctx)
   return input
 end
 
-function plugin.finish(ctx)
-  local s = ctx.scope
-  local a = s.args
+-- Where a suspicious move was played: the opponents tag plus the game URL. For
+-- a lichess link, anchor it to the move itself (#ply, half-moves from the
+-- start) so the link opens on that position; other hosts get the bare URL.
+local function suspect_where(su)
+  local tag = su.gtag and ("[" .. su.gtag .. "]") or ""
+  local url = su.gurl
+  if not url or url == "" then return tag end
+  if url:find("lichess%.org") then
+    local ply = (su.movno - 1) * 2 + ((su.side == "White") and 1 or 2)
+    url = url .. "#" .. ply
+  end
+  return tag ~= "" and (tag .. " " .. url) or url
+end
+
+-- Emit the whole report from an already-merged set of players/field. Kept
+-- separate from the accumulation so it runs once, over every worker's games,
+-- in reduce(). `a` comes from ctx.scope.args, which init() set on this worker.
+local function emit_report(ctx, players, field)
+  local a = ctx.scope.args
 
   local w = ctx.out
   local report = ctx.args:get("report")
@@ -757,7 +852,7 @@ function plugin.finish(ctx)
     if w then w:write(string.format(fmt, ...)) else ctx.log.info(fmt, ...) end
   end
 
-  local field_tau = a.reference and field_calibration(s.field, a.ref_min) or nil
+  local field_tau = a.reference and field_calibration(field, a.ref_min) or nil
   local function honest_tau_for(elo)
     if field_tau then return field_tau(elo) end
     return builtin_tau(elo, a.cal_a, a.cal_b)
@@ -765,13 +860,13 @@ function plugin.finish(ctx)
 
   -- Rank players by posterior so the report leads with the strongest signal.
   local names = {}
-  for name, pl in pairs(s.players) do
+  for name, pl in pairs(players) do
     if #pl.moves > 0 then names[#names + 1] = name end
   end
 
   local results = {}
   for _, name in ipairs(names) do
-    local pl = s.players[name]
+    local pl = players[name]
     local elo = pl.elo_n > 0 and (pl.elo_sum / pl.elo_n) or a.assume_elo
     local out = evaluate(pl, honest_tau_for(elo), a)
     aggregate(out, a)
@@ -836,10 +931,28 @@ function plugin.finish(ctx)
              sg.pcorr, sg.nwin)
       end
     end
+    if o.suspects and #o.suspects > 0 then
+      emit("  most suspicious moves (hardest best-moves found, strongest first):\n")
+      for rank, su in ipairs(o.suspects) do
+        local mv = su.san or su.uci or "?"
+        local g = suspect_where(su)
+        if su.maia and su.pplayed then
+          emit("    %2d. %-6s move %-3d as %-5s  cpl %-3d  Maia %4.1f%%, played anyway   %s\n",
+               rank, mv, su.movno, su.side or "?", su.lcp, su.pplayed * 100, g)
+        else
+          local odds = su.pm > 0 and math.max(1, math.floor(1 / su.pm + 0.5)) or 0
+          emit("    %2d. %-6s move %-3d as %-5s  cpl %-3d  honest match ~%4.1f%% (1-in-%d)   %s\n",
+               rank, mv, su.movno, su.side or "?", su.lcp, su.pm * 100, odds, g)
+        end
+      end
+    end
     emit("\n")
   end
 
-  emit("# Each z is oriented so positive = more engine-like. The combined z is a\n")
+  emit("# Each z is oriented so positive = more engine-like, standardized against a\n")
+  emit("# null that includes between-player spread (overdispersion), so it reflects\n")
+  emit("# how extreme the player is among honest peers, not how many moves were\n")
+  emit("# seen. The combined z is a\n")
   emit("# correlation-deflated Stouffer fusion; the posterior applies a prior of\n")
   emit("# %.1f%% and shrinks toward it on small samples. 'best stretch' is the\n",
        a.prior * 100)
@@ -851,8 +964,12 @@ function plugin.finish(ctx)
   emit("# excellent moves more often than a human of that rating band does, with\n")
   emit("# Maia's own policy as the honest baseline -- obvious (including forcing)\n")
   emit("# moves count for little, so only genuinely hard moves that were found\n")
-  emit("# raise it. Confirm any flag with a second engine, a deeper pass, and\n")
-  emit("# human review before acting.\n")
+  emit("# raise it. The 'most suspicious moves' list ranks individual moves by the\n")
+  emit("# same hard-move surprise (Maia excellence excess when a prior is present):\n")
+  emit("# a hard position the player nonetheless solved. It is a pointer for review,\n")
+  emit("# not a per-move accusation -- an honest strong move looks the same.\n")
+  emit("# Confirm any flag with a second engine, a deeper pass, and human review\n")
+  emit("# before acting.\n")
 
   if ctx.args:get("csv") then
     local cw = ctx.open(ctx.args:get("csv"))
@@ -874,6 +991,50 @@ function plugin.finish(ctx)
         o.Z, o.pvalue, o.posterior, o.verdict)
     end
   end
+end
+
+-- Cross-worker aggregation. The engine-bound work (process) runs in parallel at
+-- -j N; each worker accumulates its own games. partial() hands this worker's
+-- raw tally over, and reduce() folds every worker's tally into one before the
+-- single emit, so the report is identical to a -j1 run.
+function plugin.partial(ctx)
+  local s = ctx.scope
+  return { players = s.players, field = s.field, nmoves = s.nmoves }
+end
+
+function plugin.reduce(partials, ctx)
+  local players, field = {}, {}
+  for _, part in ipairs(partials) do
+    if part and part.players then
+      for name, p in pairs(part.players) do
+        local m = players[name]
+        if not m then
+          m = { moves = {}, games = 0, wins = 0, elo_sum = 0, elo_n = 0, maia_band = p.maia_band }
+          players[name] = m
+        end
+        m.maia_band = m.maia_band or p.maia_band
+        m.games   = m.games + (p.games or 0)
+        m.wins    = m.wins + (p.wins or 0)
+        m.elo_sum = m.elo_sum + (p.elo_sum or 0)
+        m.elo_n   = m.elo_n + (p.elo_n or 0)
+        -- Game ids are per-worker (1..g); remap to a global, contiguous range so
+        -- the segment scan never merges windows across two workers' games. The
+        -- remap is per worker, so the same local id in another worker gets a new
+        -- global one; the counter carries over between workers via m.nextgid.
+        local remap, nextg = {}, m.nextgid or 0
+        for _, rec in ipairs(p.moves or {}) do
+          local old = rec.gi or 1
+          if not remap[old] then nextg = nextg + 1; remap[old] = nextg end
+          rec.gi = remap[old]
+          m.moves[#m.moves + 1] = rec
+        end
+        m.nextgid = nextg
+      end
+      for _, rec in ipairs(part.field or {}) do field[#field + 1] = rec end
+    end
+  end
+  for _, m in pairs(players) do m.nextgid = nil end
+  emit_report(ctx, players, field)
 end
 
 return plugin
