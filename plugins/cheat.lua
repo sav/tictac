@@ -33,7 +33,7 @@ local plugin = {
       maia        = { type = "string",                help = "Path to an lc0 binary serving a Maia network. Enables the per-rating human-difficulty oracle." },
       maia_dir    = { type = "string",                help = "Directory holding maia-1100.pb.gz .. maia-1900.pb.gz; the band nearest the player's Elo is loaded." },
       maia_weights= { type = "string",                help = "Explicit Maia weights file, overriding maia_dir/band selection." },
-      maia_backend= { type = "string",                help = "lc0 Backend UCI option (e.g. cuda, blas); left to lc0's default when unset." },
+      maia_backend= { type = "string", default = "cuda", help = "lc0 Backend UCI option; defaults to cuda. On an lc0 built without cuda, lc0 falls back to its own default backend, so this is safe on CPU-only builds too." },
       maia_nodes  = { type = "number", default = 1,   help = "lc0 nodes per policy read; 1 gives the raw human policy head." },
       exc_cp      = { type = "number", default = 50,  help = "Centipawn loss at which a move's 'excellence' fades to zero in the Maia test." },
       book        = { type = "number", default = 8,   help = "Skip moves at or before this full-move number (opening theory)." },
@@ -60,6 +60,7 @@ local plugin = {
       csv         = { type = "string",                help = "Optional machine-readable one-row-per-player CSV." },
       annotate    = { type = "bool",   default = false, help = "Tag each analysed move with its centipawn loss as a PGN comment." },
       suspects    = { type = "number", default = 10, help = "List the N most suspicious individual moves per player in the report (0 disables)." },
+      games       = { type = "number", default = 5,  help = "List the N most suspicious individual games, each scored in isolation, in the report (0 disables)." },
     },
   },
 }
@@ -478,6 +479,7 @@ local function evaluate(pl, honest_tau, args)
   local E_hw, V_hw, O_hw, S_hw = 0, 0, 0, 0   -- hard-move weighted match (S_hw = sum of weights)
   local times, diffs = {}, {}
   local mi, pe, gid, mvno = {}, {}, {}, {}   -- per-move series for the segment scan
+  local gmeta = {}                            -- gid -> { gtag, gurl, side } for the per-game report
   local susp = {}                             -- per-move suspicion, ranked for the report
   for _, m in ipairs(moves) do
     local p = detail.choice_probs(m.lwp, honest_tau)
@@ -499,6 +501,7 @@ local function evaluate(pl, honest_tau, args)
     local k = #mi + 1
     mi[k], pe[k] = hit and 1 or 0, pm
     gid[k], mvno[k] = m.gi or 1, m.movno or 0
+    if not gmeta[gid[k]] then gmeta[gid[k]] = { gtag = m.gtag, gurl = m.gurl, side = m.side } end
     -- Per-move suspicion: the hard-move match contribution w*(hit - pm) -- high
     -- when the player found the best move in a position an honest peer rarely
     -- solves. Replaced by the Maia excellence excess below when a prior exists.
@@ -518,6 +521,62 @@ local function evaluate(pl, honest_tau, args)
     seg.zc = math.max(-8, math.min(8, detail.probit(1 - seg.pcorr)))
     out.seg = seg
     if seg.zc > 0 then out.z_seg = seg.zc end
+  end
+
+  -- Per-game localized scan. The global 'best stretch' above dilutes an isolated
+  -- cheated game across the whole history -- its Bonferroni runs over every window
+  -- of every game, so one engine-like game in a thousand never survives. Here each
+  -- game is scored on its own: find its hottest stretch, correct for the windows
+  -- inside that game, then for the number of games the player has. A single
+  -- engine-like game then stands out even while the whole-player verdict stays low.
+  if args.games > 0 then
+    local bygame = {}
+    for k = 1, #mi do
+      local b = bygame[gid[k]]
+      if not b then b = { mi = {}, pe = {}, mvno = {} }; bygame[gid[k]] = b end
+      local j = #b.mi + 1
+      b.mi[j], b.pe[j], b.mvno[j] = mi[k], pe[k], mvno[k]
+    end
+    local gkeys = {}
+    for g in pairs(bygame) do gkeys[#gkeys + 1] = g end
+    local ngames = #gkeys
+    local glist = {}
+    for _, g in ipairs(gkeys) do
+      local b = bygame[g]
+      local gn = #b.mi
+      local ones = {}
+      for j = 1, gn do ones[j] = 1 end
+      local gs = scan_segment(b.mi, b.pe, ones, args.seg_min, args.seg_max)
+      if gs then
+        local O, E = 0, 0
+        for j = 1, gn do O = O + b.mi[j]; E = E + b.pe[j] end
+        local pin = math.min(1, detail.sf(gs.z) * gs.nwin)   -- windows inside this game
+        local pgame = math.min(1, pin * ngames)              -- games examined
+        local zc = math.max(-8, math.min(8, detail.probit(1 - pgame)))
+        local meta = gmeta[g] or {}
+        glist[#glist + 1] = {
+          zc = zc, pgame = pgame, flagged = pgame <= args.seg_alpha, n = gn,
+          m0 = b.mvno[gs.i], m1 = b.mvno[gs.j], len = gs.len,
+          rate = gs.obs / gs.len, exprate = gs.exp / gs.len,
+          gmatch = O / gn, gexp = E / gn,
+          gtag = meta.gtag, gurl = meta.gurl, side = meta.side, movno = b.mvno[gs.i],
+        }
+      end
+    end
+    -- content-based total order so -j1 and -j N list the same games byte-for-byte
+    table.sort(glist, function(x, y)
+      if x.zc ~= y.zc then return x.zc > y.zc end
+      if (x.m0 or 0) ~= (y.m0 or 0) then return (x.m0 or 0) < (y.m0 or 0) end
+      if (x.gtag or "") ~= (y.gtag or "") then return (x.gtag or "") < (y.gtag or "") end
+      return (x.gurl or "") < (y.gurl or "")
+    end)
+    local top = {}
+    for _, g in ipairs(glist) do
+      if g.zc <= 0 or #top >= args.games then break end
+      top[#top + 1] = g
+    end
+    out.topgames = top
+    out.ngames_scanned = ngames
   end
 
   -- Maia difficulty oracle: does the player play excellent moves more often than
@@ -772,12 +831,14 @@ function plugin.init(ctx)
     maia         = ctx.args:get("maia"),
     maia_dir     = ctx.args:get("maia_dir"),
     maia_weights = ctx.args:get("maia_weights"),
-    maia_backend = ctx.args:get("maia_backend"),
+    maia_backend = ctx.args:get("maia_backend", "cuda"),
     maia_nodes   = math.max(1, ctx.args:number("maia_nodes", 1)),
     exc_cp       = math.max(1, ctx.args:number("exc_cp", 50)),
     annotate     = ctx.args:bool("annotate", false) == true,
     suspects     = math.max(0, ctx.args:number("suspects", 10)),
+    games        = math.max(0, ctx.args:number("games", 5)),
   }
+
   s.maia = nil   -- lazily created on first target move, banded to its Elo
 end
 
@@ -841,6 +902,8 @@ function plugin.process(input, ctx)
             if a.maia then
               if not s.maia then
                 local wf, band = maia_weights_for(a, rec.elo)
+                -- Resolve the backend up front: cuda is the default, but fall back
+                -- to lc0's own default when this build lacks it, rather than wedging.
                 local opts = { WeightsFile = wf }
                 if a.maia_backend then opts.Backend = a.maia_backend end
                 local ok2, eng = pcall(ctx.engine, a.maia, opts)
@@ -982,6 +1045,15 @@ local function emit_report(ctx, players, field)
              sg.pcorr, sg.nwin)
       end
     end
+    if o.topgames and #o.topgames > 0 then
+      emit("  most suspicious games (each scored on its own, strongest first):\n")
+      for rank, g in ipairs(o.topgames) do
+        emit("    %2d. match %3.0f%% vs ~%2.0f%% over %-3d moves; hottest run %d-%d (%d) %3.0f%% vs ~%2.0f%%%s\n",
+             rank, g.gmatch * 100, g.gexp * 100, g.n, g.m0, g.m1, g.len,
+             g.rate * 100, g.exprate * 100, g.flagged and "   *** FLAGGED ***" or "")
+        emit("        %s\n", suspect_where(g))
+      end
+    end
     if o.ds_n then
       emit("  deep-only agreement %.0f%% of %d deep-only bests found", o.ds_rateB * 100, o.ds_n)
       if o.ds_rateA then emit("   (vs %.0f%% on obvious bests)", o.ds_rateA * 100) end
@@ -1024,6 +1096,11 @@ local function emit_report(ctx, players, field)
   emit("# same hard-move surprise (Maia excellence excess when a prior is present):\n")
   emit("# a hard position the player nonetheless solved. It is a pointer for review,\n")
   emit("# not a per-move accusation -- an honest strong move looks the same.\n")
+  emit("# 'most suspicious games' scores each game on its own -- its hottest run,\n")
+  emit("# corrected for the windows in that game and then for the number of games\n")
+  emit("# the player has -- so a single engine-like game surfaces here even when the\n")
+  emit("# whole-player verdict above stays NO SIGNAL. A FLAGGED game cleared the\n")
+  emit("# multiplicity-corrected threshold and deserves direct review.\n")
   emit("# Confirm any flag with a second engine, a deeper pass, and human review\n")
   emit("# before acting.\n")
 
