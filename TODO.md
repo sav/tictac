@@ -205,9 +205,21 @@ and are worth adding:
   time-vs-difficulty correlation. Add an explicit per-move time model (expected think
   time vs observed), flagging hard moves played near-instantly and suspiciously flat
   time distributions.
-- **Posterior calibration from labelled data.** The combined-z -> posterior mapping is a
-  documented logistic heuristic. If a labelled set of clean/assisted players becomes
-  available, fit the slope/prior instead of hardcoding `beta`/`prior`.
+- **Posterior calibration from labelled data (partly done; needs scaling).** `beta` was
+  bumped from 0.9 to 1.3 after a first pass against a labelled chess.com sample: 37 banned
+  (`status: closed:fair_play_violations` via the public API) + 41 clean accounts, screened
+  blind. Findings: the composite only discriminates modestly (pooled AUC ~0.70, held-out
+  0.62), but its high-posterior tail is clean -- at `beta=1.3` the SUSPICIOUS band fires on
+  the 5 clearest banned accounts (all combined-z >= 3) with 0/41 clean false positives,
+  whereas at the old 0.9 it fired on essentially nobody. Caveats that must be fixed before
+  trusting this: (a) the sample is small and biased (opponents of a handful of known
+  accounts), so "zero FP" is sample-specific; (b) it is balanced (~1:1) while real
+  prevalence is ~4%, so the apparent precision will not hold at deployment base rate; (c)
+  the subtle/selective cheaters (AD0420, jongGun01, ShuvalovAndrii) stay below threshold --
+  this screen catches ~20% of bans, not the hard tail. Next: harvest a larger, less biased
+  labelled set, fit the slope properly (logistic regression of label on combined-z) and set
+  the `prior` to the real base rate, hold out a test split, and report sensitivity at a
+  fixed low false-positive rate rather than tuning the threshold to the sample.
 - **Overdispersion SDs are uncalibrated defaults.** The indicator z-scores now
   standardize against an overdispersed null (binomial within-player variance plus a
   between-player term), which is what stops the z from growing like `sqrt(n)` and tagging

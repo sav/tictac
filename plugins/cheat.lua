@@ -28,6 +28,8 @@ local plugin = {
       depth       = { type = "number", default = 18,  help = "Search depth per position." },
       movetime    = { type = "number",                help = "Search time per position (ms); overrides depth when set." },
       multipv     = { type = "number", default = 5,   help = "Candidate moves examined per position (choice-set size)." },
+      shallow     = { type = "number", default = 0,   help = "Shallow search depth for the deep-vs-shallow fingerprint (0 disables). Each position is also searched this shallow, and the player's agreement with the deep-only best move is measured." },
+      ds_gap      = { type = "number", default = 20,  help = "Min centipawn gap (deep eval) between the deep best and the shallow best for a position to count as 'revealing' in the deep-vs-shallow test." },
       maia        = { type = "string",                help = "Path to an lc0 binary serving a Maia network. Enables the per-rating human-difficulty oracle." },
       maia_dir    = { type = "string",                help = "Directory holding maia-1100.pb.gz .. maia-1900.pb.gz; the band nearest the player's Elo is loaded." },
       maia_weights= { type = "string",                help = "Explicit Maia weights file, overriding maia_dir/band selection." },
@@ -47,7 +49,7 @@ local plugin = {
       seg_max     = { type = "number", default = 80,  help = "Longest stretch the scan considers (it hunts localized bursts, not whole games)." },
       seg_alpha   = { type = "number", default = 0.001, help = "Multiplicity-corrected p-value below which a stretch is reported as FLAGGED." },
       prior       = { type = "number", default = 0.02, help = "Prior probability of cheating (base rate) for the posterior." },
-      beta        = { type = "number", default = 0.9, help = "Logistic slope mapping the combined z to the posterior." },
+      beta        = { type = "number", default = 1.3, help = "Logistic slope mapping the combined z to the posterior. Calibrated against a labelled chess.com sample (see TODO) so the SUSPICIOUS band fires on the clearest cases at near-zero false positives." },
       cal_a       = { type = "number", default = 561, help = "Built-in Elo(tau) intercept: Elo = cal_a + cal_b*ln(1/tau)." },
       cal_b       = { type = "number", default = 521, help = "Built-in Elo(tau) slope." },
       disp_rate   = { type = "number", default = 0.06, help = "Between-player SD of the top-1/clean/hard-move match rate among honest peers (overdispersion). Caps the rate z-scores so they measure how extreme a player is, not how many moves were seen." },
@@ -345,7 +347,33 @@ local function build_record(sf, node, args)
     if l_cp > losscap then l_cp = losscap end
     lwp[i], lcp[i], ucis[i] = l_wp, l_cp, c.uci
   end
-  return { lwp = lwp, lcp = lcp, ucis = ucis, chosen = chosen }
+  local rec = { lwp = lwp, lcp = lcp, ucis = ucis, chosen = chosen }
+
+  -- Deep-vs-shallow fingerprint: does the player follow the move that only deep
+  -- search prefers? Humans play the shallow-obvious move; an engine user plays
+  -- the deep-only best. Compare the deep best (cands[1]) with a shallow search's
+  -- best: a position is "revealing" when they differ by a real margin, and we
+  -- record whether the player chose the deep best there.
+  if args.shallow and args.shallow > 0 then
+    local rs = sf:analyse(node.board_before, { depth = args.shallow, multipv = 1 })
+    local sbest = (rs.lines and rs.lines[1] and rs.lines[1].pv and rs.lines[1].pv[1]) or rs.bestmove
+    local dbest = cands[1].uci
+    if sbest then
+      local differ = sbest ~= dbest
+      local gap = args.ds_gap
+      if differ then
+        local scp
+        for _, c in ipairs(cands) do if c.uci == sbest then scp = c.cp; break end end
+        gap = scp and (best_cp - scp) or args.ds_gap   -- outside deep top-K => clearly worse
+      end
+      rec.ds = {
+        reveal = (differ and gap >= args.ds_gap) and 1 or 0,
+        pdeep  = (played == dbest) and 1 or 0,
+        seqd   = (not differ) and 1 or 0,
+      }
+    end
+  end
+  return rec
 end
 
 -- Fit the honest model from the field, bucketed by Elo. Returns a function
@@ -555,6 +583,27 @@ local function evaluate(pl, honest_tau, args)
   -- real null spread is wider than binomial. Without this term a constant per-move
   -- bias b makes z grow like sqrt(n), and every player with enough moves trips the
   -- threshold; with it z converges to b/SD, a genuine effect size.
+  -- Deep-vs-shallow agreement: among revealing positions (only deep search
+  -- prefers a different move), how often the player played the deep-only best,
+  -- contrasted with agreement on the obvious positions (shallow == deep).
+  local ds_reveal, ds_deep, ds_obv, ds_obv_deep = 0, 0, 0, 0
+  for _, m in ipairs(moves) do
+    if m.ds then
+      if m.ds.reveal == 1 then
+        ds_reveal = ds_reveal + 1
+        if m.ds.pdeep == 1 then ds_deep = ds_deep + 1 end
+      elseif m.ds.seqd == 1 then
+        ds_obv = ds_obv + 1
+        if m.ds.pdeep == 1 then ds_obv_deep = ds_obv_deep + 1 end
+      end
+    end
+  end
+  if ds_reveal > 0 then
+    out.ds_n = ds_reveal
+    out.ds_rateB = ds_deep / ds_reveal
+    if ds_obv > 0 then out.ds_rateA = ds_obv_deep / ds_obv end
+  end
+
   local function z(obs, e, v, weight, sd)
     v = v + (weight * sd) ^ 2
     return v > 0 and (obs - e) / math.sqrt(v) or 0
@@ -698,6 +747,8 @@ function plugin.init(ctx)
     depth        = ctx.args:number("depth", 18),
     movetime     = ctx.args:number("movetime"),
     multipv      = math.max(2, ctx.args:number("multipv", 5)),
+    shallow      = math.max(0, ctx.args:number("shallow", 0)),
+    ds_gap       = math.max(0, ctx.args:number("ds_gap", 20)),
     book         = ctx.args:number("book", 8),
     maxply       = ctx.args:number("maxply"),
     losscap      = ctx.args:number("losscap", 300),
@@ -708,7 +759,7 @@ function plugin.init(ctx)
     ref_min      = ctx.args:number("ref_min", 400),
     min_moves    = ctx.args:number("min_moves", 40),
     prior        = ctx.args:number("prior", 0.02),
-    beta         = ctx.args:number("beta", 0.9),
+    beta         = ctx.args:number("beta", 1.3),
     cal_a        = ctx.args:number("cal_a", 561),
     cal_b        = ctx.args:number("cal_b", 521),
     disp_rate    = math.max(0, ctx.args:number("disp_rate", 0.06)),
@@ -930,6 +981,11 @@ local function emit_report(ctx, players, field)
         emit("    -> FLAGGED stretch: corrected p=%.1e over %d windows scanned\n",
              sg.pcorr, sg.nwin)
       end
+    end
+    if o.ds_n then
+      emit("  deep-only agreement %.0f%% of %d deep-only bests found", o.ds_rateB * 100, o.ds_n)
+      if o.ds_rateA then emit("   (vs %.0f%% on obvious bests)", o.ds_rateA * 100) end
+      emit("\n")
     end
     if o.suspects and #o.suspects > 0 then
       emit("  most suspicious moves (hardest best-moves found, strongest first):\n")
