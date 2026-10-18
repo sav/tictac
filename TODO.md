@@ -27,16 +27,21 @@ thread blocking on a single read.
 
 ## Runtime
 
-- **Cross-worker aggregation via `ctx.global`.** A Lua state cannot be shared between
-  threads, so under `-j N` each worker owns a whole pipeline: `ctx.scope` is private to
-  it, `finish` runs once per worker, and anything accumulated across games is per worker.
-  Aggregating plugins (a histogram, a dedup table) are therefore only correct at `-j1`,
-  which is why none ship under `plugins/`. Add a `ctx.global` table owned by the runtime
-  rather than by any worker's Lua state, with every access serialized and values crossing
-  the boundary as deep-copied plain data. A synchronized table alone cannot make
-  read-modify-write atomic, so it needs a compare-and-set primitive (or a `finish`-time
-  merge hook) alongside it. This is what the removed `ctx.shared` gestured at without ever
-  being safe for it.
+- **Live cross-worker shared state (`ctx.global`).** The finish-time merge hook is
+  done: `partial`/`reduce` fold every worker's per-worker `ctx.scope` into one
+  report (the runtime lifts each partial out of its Lua state as deep-copied plain
+  data and calls `reduce` once). That covers aggregation emitted *at the end*. It
+  does not cover a plugin that needs state shared *during* `process` -- a running
+  dedup set, a cross-worker counter read back mid-run. For that, add a `ctx.global`
+  table owned by the runtime with serialized access and a compare-and-set (plain
+  read-modify-write over a synchronized table still races). This is what the removed
+  `ctx.shared` gestured at without being safe for it.
+
+- **Skip the partial transport at `-j1`.** When there is a single pipeline, `reduce`
+  still round-trips the whole partial out of and back into the same Lua state via the
+  C++ `ValueTree`. It is correct and one-time, but for a large aggregate (cheat's tens
+  of thousands of move records) it is pure overhead. When `jobs == 1`, hand the live
+  partial straight to `reduce` without the conversion.
 
 - **Leveled logging with `-v`/`-q`.** The runtime never says what it is doing: nothing
   reports how many workers `-j` resolved to, which plugins loaded and in what order, which
@@ -85,11 +90,15 @@ thread blocking on a single read.
 
 ## Engine
 
-- **Share engines across workers.** `ctx.engine` memoizes per plugin instance, and `-j N`
-  gives every worker its own instance, so N workers spawn N subprocesses per engine path.
-  Each engine also has its own `Threads` option, so the two levels of parallelism multiply
-  and oversubscribe the machine unless the user tunes them by hand. A pooled engine behind
-  the non-blocking API above would let the workers share a fixed set instead.
+- **`fork`+`execlp` runs from worker threads now.** The shared `EnginePool`
+  creates engines lazily on the first borrow, which happens on a worker thread,
+  not on the single-threaded startup path as before. Creation is serialized by
+  the pool's `create_mu_` so no two forks overlap, but `execlp` does a PATH
+  search that can `malloc`, and `malloc` after `fork` in a multithreaded program
+  is only safe when no other thread held the allocator lock at fork time. The
+  window is tiny and has not misbehaved, but to remove the hazard entirely,
+  resolve the engine path once up front and `execv` an absolute path (no
+  PATH-search allocation), or pre-create the engines on the main thread.
 
 - **`EINTR` tears down the engine session.** `Engine::send` and `Engine::readLine` treat
   any `n <= 0` from `::write`/`::read` as fatal. A signal delivered mid-call makes the
@@ -143,6 +152,26 @@ thread blocking on a single read.
   `ctx.args:number("depth")` yields the declared default without repeating it in every
   accessor call.
 
+- **`fetch.lua new` misses games sharing the cutoff second.** Incremental fetch takes
+  the newest game already on disk as the cutoff and keeps only downloaded games with a
+  strictly greater timestamp. PGN timestamps are second-granular, so a different game
+  played in the very same second as the cutoff game is never picked up. It is a tolerable
+  gap (two of one player's games starting in the same second is near-impossible) and the
+  by-design cost of reading only the first and last existing games. Closing it would mean
+  recording the cutoff game's id (Site/Link URL) and keeping same-second games whose id
+  differs -- a small amount of extra bookkeeping if it ever matters.
+
+- **`assess.lua` is Linux-only and re-invokes the binary.** The assessor drives the two
+  shipped plugins by spawning the running tictac once per stage per user, which it finds
+  through `/proc/$PPID/exe` (the binary) and `/proc/self/cmdline` (its own plugin dir,
+  since the Lua sandbox omits the `debug` library). Both are Linux-specific; on another OS
+  `bin=` must be passed and the plugin dir falls back to `plugins/`. It would be cleaner to
+  expose the plugin's own resolved path and sibling directory through `ctx` (e.g.
+  `ctx.plugin.dir`) so no `/proc` reads are needed, and/or to let a plugin feed games into
+  its own pipeline so assess need not spawn a second process at all. Also: plugin-spec
+  values are space-separated, so an `outdir`/path or username containing a space breaks the
+  forwarded spec -- validate or quote-escape per-value if that ever matters.
+
 ## Build
 
 - **Drop the CMake policy shim once upstream Lua bumps its minimum.** `CMakeLists.txt`
@@ -159,11 +188,11 @@ human-difficulty oracle (`maia=`). These extensions were deliberately left out
 and are worth adding:
 
 - **Per-player Maia banding.** The Maia oracle loads one network, banded to the
-  first target move's Elo, and reuses it for the whole run (`ctx.engine` also memoizes
-  the engine by binary path, so a second band through the same `lc0` would collide).
-  A run that screens players across different rating bands should load the network
-  nearest each player's Elo. Needs `ctx.engine` keyed by path+options, or a per-player
-  engine handle, plus switching `WeightsFile` without reloading the net each move.
+  first target move's Elo, and reuses it for the whole run. The old blocker is gone:
+  `ctx.engine` now returns a handle keyed by path+options, so two bands are two
+  distinct pool signatures (different `WeightsFile`) rather than a collision. What
+  remains is the cheat.lua side: pick the band nearest *each* player's Elo and keep a
+  per-band handle, instead of banding once to the first target move.
 - **Maia oracle is unvalidated end-to-end.** The `z_maia` indicator was validated
   offline against the `maia2` Python model, not against the shipped `lc0`+Maia UCI path
   (which depends on `Engine::policy`, itself untested -- see Engine). Once lc0 is wired,
@@ -179,3 +208,18 @@ and are worth adding:
 - **Posterior calibration from labelled data.** The combined-z -> posterior mapping is a
   documented logistic heuristic. If a labelled set of clean/assisted players becomes
   available, fit the slope/prior instead of hardcoding `beta`/`prior`.
+- **Overdispersion SDs are uncalibrated defaults.** The indicator z-scores now
+  standardize against an overdispersed null (binomial within-player variance plus a
+  between-player term), which is what stops the z from growing like `sqrt(n)` and tagging
+  every player with enough moves. But the between-player SDs (`disp_rate`, `disp_acpl`,
+  `disp_exc`, `disp_elo`) are hardcoded round-number defaults, not measured. They should
+  be estimated per rating band from a reference population of honest players -- extend
+  `field_calibration` (which today fits only `tau`) to also fit each indicator's mean and
+  between-player SD, and make the `reference` path the default source when enough field
+  moves are present.
+- **Segment scan still uses binomial variance.** The localized-assistance scan
+  (`scan_segment`) standardizes each window against binomial variance only, with no
+  overdispersion term. It is bounded in length (`seg_max`) and Bonferroni-corrected over
+  the windows examined, so it does not blow up with `n` the way the global indicators did,
+  but a lucky honest stretch can still over-flag. Fold a between-player term into the
+  window z once the dispersion SDs above are calibrated.
