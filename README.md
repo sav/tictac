@@ -54,6 +54,7 @@ tictac --file <db.pgn> --plugin <spec>... [--output <file>] [--on-error <mode>] 
 | `-o`, `--output` | Where surviving games are written (default: stdout, PGN). |
 | `--no-output` | Discard the default game stream (useful for pure reporters). |
 | `-j`, `--jobs` | Games to process in parallel (default `1`; `0` = one per CPU). Each worker runs its own copy of the whole plugin chain, so above `1` games are written in completion order rather than input order -- see [Limitations](#limitations). |
+| `--engines` | Engine processes per `(path, options)`, shared across workers (default: match `--jobs`). Lets engine count be capped below the worker count when engines are the scarce resource. |
 | `--on-error` | `abort` \| `drop` \| `pass` (default `abort`) -- how a plugin's failing `process()` is handled: `abort` halts the run, `drop` drops the game, `pass` passes it through unchanged; all three log the error. A failing `init` always aborts. |
 
 For example, keep only Fischer's white games and write them out:
@@ -63,8 +64,51 @@ tictac --file games.pgn --plugin "filter.lua white=^Fischer" --output fischer.pg
 ```
 
 See [`plugins/`](plugins/) for runnable examples -- filters, a splitter, a CSV
-reporter, and engine-driven blunder/puzzle finders -- and [`LUA.md`](LUA.md) for
-the plugin interface and an archetype catalog.
+reporter, engine-driven blunder/puzzle finders, a lichess/chess.com game
+downloader (`fetch.lua`), a composite statistical cheat screener (`cheat.lua`),
+and a one-shot assessor that downloads a user's games and screens them in a
+single command (`assess.lua`) -- and [`LUA.md`](LUA.md) for the plugin interface
+and an archetype catalog.
+
+`fetch.lua` is a source plugin: it has no input game, so point tictac at an
+empty database and discard the stream. It downloads a list of users' games
+(from lichess by default, clocks and evals included so the output feeds
+`cheat.lua` directly):
+
+```sh
+tictac --file /dev/null --no-output --plugin \
+  "fetch.lua user=zav1o user=SSMMG out=games.pgn max=100"
+```
+
+Pass `site=chesscom` to pull from chess.com instead (its public monthly
+archives, newest first up to `max`; `user=` and `max=` only, no token):
+
+```sh
+tictac --file /dev/null --no-output --plugin \
+  "fetch.lua site=chesscom user=hikaru out=games.pgn max=100"
+```
+
+Add `new` to fetch incrementally: when the target file already holds games,
+fetch reads just its first and last game for the newest timestamp, downloads
+only games newer than that (lichess with `since=`, chess.com by stopping the
+archive walk at the cutoff), and prepends them. It needs a per-user file --
+`dir=`, or `out=` with a single user:
+
+```sh
+tictac --file /dev/null --no-output --plugin \
+  "fetch.lua site=chesscom user=hikaru out=games.pgn max=100 new"
+```
+
+`assess.lua` chains the two: it downloads one or more users' games with
+`fetch.lua` and screens each with `cheat.lua`, writing `<user>.pgn` and the
+report `<user>.txt` (which lists the `n` most suspicious moves, default 10) into
+`outdir` (default `./`). It is also a source plugin, so point tictac at an empty
+database:
+
+```sh
+tictac --file /dev/null --no-output --plugin \
+  "assess.lua site=chesscom users=rsprudencio,hikaru n=10 outdir=~/dl max=100"
+```
 
 ## Build
 
@@ -163,12 +207,16 @@ along with what implementing them would take.
 - **Whole-file input.** Input is read from files only (no stdin, no streaming).
 - **Parallelism is per game, not per plugin.** A Lua state cannot be shared
   between threads, so `-j N` gives each worker its own copy of the entire plugin
-  chain. `init` and `finish` therefore run once *per worker*, `ctx.scope` is per
-  worker, and a plugin that engages an engine spawns one subprocess per worker
-  (set the engine's own `Threads` option accordingly, or the two levels of
-  parallelism will oversubscribe the machine). A plugin that aggregates across
-  the whole database (a histogram, a dedup table) only produces a single correct
-  result at `-j1`. Games are written in completion order above `-j1`.
+  chain; `init`, `process` and `finish` run on their own worker and `ctx.scope`
+  is per worker. Two facilities make `-j N` useful anyway. Engines come from a
+  shared, bounded pool rather than one process per worker: a worker borrows one
+  for each analyse/policy call, and `--engines K` caps how many run at once
+  (default: match `--jobs`). And a plugin that aggregates across the whole
+  database (a histogram, the cheat screener) defines `partial`/`reduce` instead
+  of `finish`: each worker returns its tally, the runtime folds them, and
+  `reduce` emits one report identical to a `-j1` run -- see [`LUA.md`](LUA.md).
+  A plugin that aggregates in a per-worker `finish` instead still needs `-j1`.
+  Games are written in completion order above `-j1`.
 
 ## License
 

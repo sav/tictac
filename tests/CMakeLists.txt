@@ -126,6 +126,27 @@ tt_jobs(jobs_eight_same_set many_games.pgn 8  "${TT_PASS}" many_games.pgn)
 # More workers than games: the extra pipelines must simply idle and shut down.
 tt_jobs(jobs_more_than_games three_games.pgn 8 "${TT_PASS}" three_games.pgn)
 
+# An aggregating plugin (partial()/reduce()) must fold every worker's games into
+# one report regardless of how they were split, so -j1 and -jN agree byte for
+# byte and match the expected aggregate. many_games.pgn has more games than
+# workers, so the split is non-trivial.
+function(tt_reduce name fixture jobs plugin produced expected)
+  add_test(NAME ${name}
+    COMMAND ${CMAKE_COMMAND}
+      -DTICTAC=$<TARGET_FILE:tictac>
+      -DJOBS=${jobs}
+      -DPLUGIN=${CMAKE_CURRENT_SOURCE_DIR}/plugins/${plugin}
+      -DFIXTURE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/${fixture}
+      -DPRODUCED=${produced}
+      -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/expected/${expected}
+      -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}/${name}
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/reduce.cmake)
+  set_tests_properties(${name} PROPERTIES TIMEOUT 60)
+endfunction()
+
+tt_reduce(reduce_sum_four  many_games.pgn 4 "reduce_sum.lua out=agg.txt" agg.txt reduce_sum.txt)
+tt_reduce(reduce_sum_eight many_games.pgn 8 "reduce_sum.lua out=agg.txt" agg.txt reduce_sum.txt)
+
 # A stop under -j halts the run cleanly; the games already in flight still land,
 # so the count is bounded by the worker count rather than exact.
 add_test(NAME jobs_stop_is_bounded

@@ -10,6 +10,7 @@
 #include "game.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -20,6 +21,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include <sol/sol.hpp>
@@ -103,7 +105,8 @@ struct RunOptions {
     std::string output = "-";
     bool noOutput = false;
     OnError onError = OnError::Abort;
-    std::size_t jobs = 1; // pipelines run in parallel; always >= 1 by the time run() sees it
+    std::size_t jobs = 1;    // pipelines run in parallel; always >= 1 by the time run() sees it
+    std::size_t engines = 0; // engine processes per (path, options); 0 means "use jobs"
 };
 
 // Parse a "file.lua key=value key2=value2" spec into a PluginSpec.
@@ -130,13 +133,37 @@ struct LuaMove {
     int ply = -1;               // index into game->moves; -1 if not a mainline move
 };
 
+// A Lua-facing engine handle: a lightweight reference into the shared
+// EnginePool rather than a process of its own. Each analyse/policy call borrows
+// a process for the duration of the call and returns it, so many workers share
+// a bounded set of engines. setOption changes the signature, so a call after it
+// borrows from (and lazily creates) engines carrying the new options.
+struct EngineHandle {
+    EnginePool *pool = nullptr;
+    std::string path;
+    std::unordered_map<std::string, std::string> options;
+};
+
+// A plugin's cross-worker partial, lifted out of its Lua state into plain C++ so
+// it can be rebuilt in another state for reduce(). Only nil/bool/number/string
+// and tables of those survive the trip; anything else makes partial() an error.
+struct ValueTree {
+    struct Entry;
+    using Table = std::vector<Entry>;
+    std::variant<std::monostate, bool, std::int64_t, double, std::string, Table> value;
+};
+
+struct ValueTree::Entry {
+    std::variant<std::int64_t, std::string> key; // the Lua table key (integer or string)
+    ValueTree value;
+};
+
 // A loaded plugin and its private execution context.
 struct PluginInstance {
     sol::table table;
     sol::table ctx;
     std::shared_ptr<Args> args;
     std::string name;
-    std::unordered_map<std::string, std::shared_ptr<Engine>> engines; // one subprocess per path
 };
 
 // One element of the pipeline value as it travels between plugins.
@@ -158,6 +185,7 @@ public:
         RunOptions const &opts,
         std::shared_ptr<Writer> out,
         WriterRegistry &writers,
+        EnginePool &engines,
         std::size_t worker,
         std::size_t workers
     );
@@ -174,11 +202,25 @@ public:
     // --on-error abort.
     [[nodiscard]] bool process(std::shared_ptr<Game> const &game, std::size_t index);
 
-    // Run every finish() hook in pipeline order; a failure is only reported.
-    void finish();
+    // The plugins in this pipeline, indexed in chain order. The runtime drives
+    // the finish phase across pipelines slot by slot (see below).
+    [[nodiscard]] std::size_t pluginCount() const { return plugins_.size(); }
 
-    // Drop the cached engine handles, quitting one subprocess per path.
-    void closeEngines();
+    // Whether the plugin in slot `j` defines reduce() -- i.e. aggregates across
+    // workers rather than emitting a per-worker finish().
+    [[nodiscard]] bool hasReduce(std::size_t j) const;
+
+    // Call the slot-`j` plugin's finish() (per-worker emit); a failure is only
+    // reported, as the games are already out.
+    void finishSlot(std::size_t j);
+
+    // Call the slot-`j` plugin's partial() and lift its result into a ValueTree
+    // so another pipeline can rebuild it. A missing partial() yields nil.
+    [[nodiscard]] ValueTree partial(std::size_t j);
+
+    // Rebuild `partials` as a Lua array in this pipeline's state and call the
+    // slot-`j` plugin's reduce(partials, ctx) -- the one cross-worker emit.
+    void reduce(std::size_t j, std::vector<ValueTree> const &partials);
 
 private:
     void registerTypes();
@@ -189,6 +231,7 @@ private:
     RunOptions const &opts_;
     std::shared_ptr<Writer> out_;
     WriterRegistry &writers_;
+    EnginePool &engines_;
     std::size_t const worker_;  // 1-based; ctx.worker
     std::size_t const workers_; // ctx.workers
     sol::state lua_;
@@ -209,6 +252,7 @@ private:
     RunOptions opts_;
     std::shared_ptr<Writer> out_; // the default game stream; null under --no-output
     WriterRegistry writers_;      // ctx.open() sinks, one per path for the whole run
+    EnginePool engines_;          // shared engine processes; outlives the pipelines
     std::vector<std::unique_ptr<Pipeline>> pipelines_;
 };
 

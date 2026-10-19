@@ -5,16 +5,25 @@
 
 #include "engine.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cerrno>
+#include <charconv>
+#include <condition_variable>
 #include <csignal>
 #include <cstddef>
 #include <format>
+#include <iterator>
+#include <memory>
+#include <mutex>
+#include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include <fcntl.h>
 #include <sys/wait.h>
@@ -180,6 +189,34 @@ InfoLine parseInfo(std::istringstream &iss, Analysis &overall) {
     return info;
 }
 
+bool isUciMove(std::string_view s) {
+    auto file = [](char c) { return c >= 'a' && c <= 'h'; };
+    auto rank = [](char c) { return c >= '1' && c <= '8'; };
+    if (s.size() < 4 || s.size() > 5) return false;
+    if (!(file(s[0]) && rank(s[1]) && file(s[2]) && rank(s[3]))) return false;
+    if (s.size() == 5 && s[4] != 'q' && s[4] != 'r' && s[4] != 'b' && s[4] != 'n') return false;
+    return true;
+}
+
+// Parse one lc0 per-move line, positioned just past the "info string" tokens:
+// "<move>  (NNN ) N: ... (P: NN.NN%) ...". Returns the move and its prior as a
+// fraction, or nullopt for a summary line or a non-lc0 engine's info string.
+std::optional<MovePrior> parsePolicy(std::istringstream &iss) {
+    std::string move;
+    if (!(iss >> move) || !isUciMove(move)) return std::nullopt;
+    std::string const rest((std::istreambuf_iterator<char>(iss)), std::istreambuf_iterator<char>());
+    auto at = rest.find("(P:");
+    if (at == std::string::npos) return std::nullopt;
+    at += 3;
+    while (at < rest.size() && rest[at] == ' ') ++at;
+    auto end = rest.find('%', at);
+    if (end == std::string::npos) return std::nullopt;
+    double pct = 0.0;
+    auto [ptr, ec] = std::from_chars(rest.data() + at, rest.data() + end, pct);
+    if (ec != std::errc{}) return std::nullopt;
+    return MovePrior{move, pct / 100.0};
+}
+
 void collect(Analysis &result, std::vector<AnalysisLine> const &lines, int multipv) {
     result.score = lines[0].score;
     result.mate = lines[0].mate;
@@ -199,6 +236,10 @@ Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
         throw std::runtime_error("engine: analyse requires one of depth, movetime or nodes");
     if (limits.multipv < 1 || limits.multipv > kMaxLines)
         throw std::runtime_error(std::format("engine: multipv must be between 1 and {}", kMaxLines));
+    // Clear the transposition table so the result depends only on this position,
+    // not on what this (possibly pool-shared, reused) process searched before.
+    // That keeps a run reproducible and identical across --jobs.
+    send("ucinewgame");
     setOption("MultiPV", std::to_string(limits.multipv));
     syncReady();
     send("position fen " + fen);
@@ -224,6 +265,32 @@ Analysis Engine::analyse(std::string const &fen, AnalysisLimits const &limits) {
     }
     detail::collect(result, lines, limits.multipv);
     return result;
+}
+
+std::vector<MovePrior> Engine::policy(std::string const &fen, AnalysisLimits const &limits) {
+    // VerboseMoveStats makes lc0 print one "info string" per legal move with its
+    // policy prior. It is an unknown option elsewhere (e.g. Stockfish), which is
+    // harmless: such an engine emits no matching lines and the result is empty.
+    send("ucinewgame"); // independent of any prior search, as in analyse()
+    setOption("VerboseMoveStats", "true");
+    syncReady();
+    send("position fen " + fen);
+    AnalysisLimits lim = limits;
+    if (!lim.depth && !lim.movetime && !lim.nodes) lim.nodes = 1; // raw policy head
+    send(detail::goCommand(lim));
+
+    std::vector<MovePrior> priors;
+    for (;;) {
+        std::istringstream iss(readLine());
+        std::string tok;
+        iss >> tok;
+        if (tok == "bestmove") break;
+        if (tok != "info") continue;
+        iss >> tok;
+        if (tok != "string") continue;
+        if (auto mp = detail::parsePolicy(iss)) priors.push_back(std::move(*mp));
+    }
+    return priors;
 }
 
 void Engine::send(std::string const &line) {
@@ -288,6 +355,115 @@ void Engine::shutdown() noexcept {
         ::waitpid(pid_, &status, 0);
     }
     pid_ = -1;
+}
+
+// One signature's engines: the processes created for it, the idle ones, and the
+// lock other workers wait on for a free (or a not-yet-created) engine.
+struct EngineLease::Slot {
+    std::string path;
+    std::unordered_map<std::string, std::string> options;
+    std::vector<std::unique_ptr<Engine>> all; // owns every process for this key
+    std::vector<Engine *> free;               // the currently idle ones
+    std::size_t created = 0;
+    std::mutex mu;
+    std::condition_variable cv;
+};
+
+EngineLease::~EngineLease() {
+    if (pool_ && engine_) pool_->release(slot_, engine_);
+}
+
+EngineLease::EngineLease(EngineLease &&other) noexcept
+    : pool_(other.pool_), slot_(other.slot_), engine_(other.engine_) {
+    other.pool_ = nullptr;
+    other.slot_ = nullptr;
+    other.engine_ = nullptr;
+}
+
+EngineLease &EngineLease::operator=(EngineLease &&other) noexcept {
+    if (this != &other) {
+        if (pool_ && engine_) pool_->release(slot_, engine_);
+        pool_ = other.pool_;
+        slot_ = other.slot_;
+        engine_ = other.engine_;
+        other.pool_ = nullptr;
+        other.slot_ = nullptr;
+        other.engine_ = nullptr;
+    }
+    return *this;
+}
+
+namespace {
+
+// A stable signature for (path, options): the path, then every option sorted so
+// the same set always maps to the same key regardless of insertion order.
+std::string engineKey(
+    std::string const &path, std::unordered_map<std::string, std::string> const &options
+) {
+    std::vector<std::pair<std::string, std::string>> sorted(options.begin(), options.end());
+    std::ranges::sort(sorted);
+    std::string key = path;
+    for (auto const &[name, value] : sorted) {
+        key += '\0';
+        key += name;
+        key += '=';
+        key += value;
+    }
+    return key;
+}
+
+} // namespace
+
+EnginePool::EnginePool(std::size_t maxPerKey) : max_(maxPerKey < 1 ? 1 : maxPerKey) {}
+
+EnginePool::~EnginePool() = default;
+
+EngineLease EnginePool::borrow(
+    std::string const &path, std::unordered_map<std::string, std::string> const &options
+) {
+    Slot *slot = nullptr;
+    {
+        std::scoped_lock const lock(map_mu_);
+        auto &entry = slots_[engineKey(path, options)];
+        if (!entry) {
+            entry = std::make_unique<Slot>();
+            entry->path = path;
+            entry->options = options;
+        }
+        slot = entry.get();
+    }
+
+    std::unique_lock lock(slot->mu);
+    slot->cv.wait(lock, [&] { return !slot->free.empty() || slot->created < max_; });
+
+    if (!slot->free.empty()) {
+        Engine *engine = slot->free.back();
+        slot->free.pop_back();
+        return EngineLease(this, slot, engine);
+    }
+
+    // Room to grow: fork a new process. create_mu_ serializes the fork across
+    // every key so no two happen at once (fork+exec in a threaded program is
+    // only safe because the child does async-signal-safe work until exec).
+    ++slot->created;
+    try {
+        std::scoped_lock const creating(create_mu_);
+        slot->all.push_back(std::make_unique<Engine>(slot->path, slot->options));
+        return EngineLease(this, slot, slot->all.back().get());
+    } catch (...) {
+        --slot->created;
+        lock.unlock();
+        slot->cv.notify_one();
+        throw;
+    }
+}
+
+void EnginePool::release(Slot *slot, Engine *engine) noexcept {
+    {
+        std::scoped_lock const lock(slot->mu);
+        slot->free.push_back(engine);
+    }
+    slot->cv.notify_one();
 }
 
 } // namespace tictac

@@ -36,7 +36,7 @@ flowchart LR
 ## 2. Command-line surface
 
 ```sh
-tictac --file <db.pgn> [--plugin <spec>]... [--output <file>] [--on-error <mode>] [--jobs <n>]
+tictac --file <db.pgn> [--plugin <spec>]... [--output <file>] [--on-error <mode>] [--jobs <n>] [--engines <k>]
 ```
 
 | Flag | Meaning |
@@ -46,6 +46,7 @@ tictac --file <db.pgn> [--plugin <spec>]... [--output <file>] [--on-error <mode>
 | `--output`, `-o` | Where surviving games are written (default: stdout, PGN). `-` = stdout, omit with `--no-output`. |
 | `--no-output` | Discard the default game stream (useful for pure reporters). |
 | `--jobs`, `-j` | Games to process in parallel (default `1`; `0` = one per CPU). Each worker gets its own Lua state and its own copy of every plugin -- see [§8](#8-execution-semantics). |
+| `--engines` | Engine processes per `(path, options)`, shared across workers (default: match `--jobs`). A worker borrows one for each analyse/policy call, so `K < jobs` caps engines when they are the scarce resource (e.g. a CPU-bound lc0 net). |
 | `--on-error` | `abort` \| `drop` \| `pass` (default `abort`) -- how a plugin's failing `process()` is handled: `abort` halts the run, `drop` drops the game, `pass` passes it through unchanged; all three log the error. A failing `init` always aborts. |
 
 ### Plugin spec & arguments
@@ -98,8 +99,19 @@ function plugin.process(input, ctx)
   return input            -- pass through unchanged
 end
 
--- Called once, after the last game. Emit reports/aggregates here.
+-- Called once per worker, after its last game. Emit per-worker reports here.
 function plugin.finish(ctx)
+end
+
+-- Cross-worker aggregation (optional pair; see §8). partial() hands this
+-- worker's tally over as plain data; reduce() folds every worker's partial into
+-- one and emits the single report. Define these *instead of* finish().
+function plugin.partial(ctx)
+  return ctx.scope.tally          -- plain data: nil/bool/number/string/tables of those
+end
+
+function plugin.reduce(partials, ctx)
+  -- partials[i] is worker i's partial; combine and emit once.
 end
 
 return plugin
@@ -109,12 +121,16 @@ return plugin
 
 | Hook | When | Typical use |
 |------|------|-------------|
-| `init(ctx)` | Once, at startup. Optional. | Create UCI engines, open output writers, validate args. |
+| `init(ctx)` | Once per worker, at startup. Optional. | Create UCI engines, open output writers, validate args. |
 | `process(input, ctx)` | Once per game, in pipeline order. **Required.** | Inspect / annotate / filter / fork. |
-| `finish(ctx)` | Once, after all games. Optional. | Emit histograms, reports, opening trees, summaries. |
+| `finish(ctx)` | Once per worker, after its last game. Optional. | Emit per-worker reports/summaries. |
+| `partial(ctx)` | Once per worker, after `process`. Optional. | Return this worker's tally for `reduce`. |
+| `reduce(partials, ctx)` | Once, on worker 1, after every `partial`. Optional. | Fold all workers' tallies and emit one report. |
 
-Engines and writers opened via `ctx` are **closed automatically** by tictac
-after `finish`.
+A plugin defines **either** `finish` (a per-worker emit) **or** `partial`+`reduce`
+(one emit over every worker's games); see [§8](#8-execution-semantics). Engines
+and writers opened via `ctx` are **closed automatically** by tictac after the
+finish phase.
 
 ---
 
@@ -803,6 +819,19 @@ maps to ±100000.
 if sf:cp(board, { depth = 18 }) < -300 then ... end   -- White is losing badly
 ```
 
+**`engine:policy(board[, limits])`**: Root move policy priors -- the engine's
+prior probability for each legal move, before search. Only engines that print
+them respond (an `lc0` net with `VerboseMoveStats`, e.g. a Maia network, where
+the prior is the modelled probability a human of that rating plays the move);
+other engines (Stockfish) return an empty table. `limits` defaults to
+`{ nodes = 1 }`, giving the raw policy head rather than a search.
+*Returns* a table mapping each UCI move to its prior in `[0, 1]`.
+
+```lua
+local maia = ctx.engine("lc0", { WeightsFile = "maia-1500.pb.gz" })
+local p = maia:policy(board)        -- { e2e4 = 0.34, d2d4 = 0.21, ... }
+```
+
 ### Writer
 
 An output sink -- a PGN/CSV/text file opened with
@@ -855,6 +884,8 @@ suite, so it stays working as the runtime moves. Invoke one with
 | `csv.lua` | Export one row per game: white, black, result, eco. | `csv.lua out=games.csv` |
 | `blunder.lua` | Tag moves whose eval swings by at least `drop` centipawns. Needs an engine. | `blunder.lua engine=stockfish depth=16 drop=200` |
 | `puzzle.lua` + `collect.lua` | Find a forced mate, hand the position downstream, then emit it. Needs an engine. | `puzzle.lua mate=3` then `collect.lua out=puzzles.epd` |
+| `cheat.lua` | Estimate the probability a player used engine help: several engine-correlation indicators, a scan for the most engine-like contiguous stretch (part-game assistance), an optional Maia human-difficulty oracle (`maia=` lc0), and a ranked list of the `suspects=` most engine-like individual moves (default 10), folded into one posterior. Aggregates across the whole database via `partial`/`reduce`, so it runs at any `-j N`. Needs an engine. | `cheat.lua player=^Doe depth=18 multipv=5 suspects=10 maia=lc0 maia_dir=nets report=out.txt` |
+| `assess.lua` | Driver that does the whole screening for a list of online users: download each user's games with `fetch.lua`, then analyse them with `cheat.lua`, writing `outdir/<user>.pgn` and `outdir/<user>.txt` (the report, with the `n` most suspicious moves). Re-invokes the running tictac binary per stage, so it is Linux-only. Needs curl and an engine. | `assess.lua site=chesscom users=Doe,Roe n=10 outdir=~/dl max=100` |
 
 The `puzzle` -> `collect` pair is the cross-plugin handoff the pipeline value
 exists for: one plugin selects a position and attaches data, the next reads it.
@@ -949,8 +980,10 @@ end
    reading the DB.
 6. `"abort"` skips the rest of the pipeline for the current game, drops that game
    (it is *not* emitted), then stops reading the DB.
-7. After all games (or after a `"stop"`/`"abort"`), each plugin's `finish` runs
-   **in pipeline order**.
+7. After all games (or after a `"stop"`/`"abort"`), the finish phase runs **in
+   pipeline order**: for each plugin, either its `finish` runs once per worker,
+   or -- when it defines `reduce` -- every worker's `partial` is collected and
+   its `reduce` runs once.
 8. All managed engines and writers are closed.
 
 ### Parallel runs (`--jobs`)
@@ -959,12 +992,24 @@ end
 because a Lua state cannot be entered by two threads. At the default `-j1` the
 behavior above is exact. Above it:
 
-- **Everything in `ctx` is per worker.** `init` and `finish` each run N times and
-  `ctx.scope` is private to one worker. A plugin that aggregates over the
-  database (a histogram, a dedup table) sees only the games its own worker
-  handled, so run those at `-j1`. `ctx.out` and `ctx.open` writers are the
-  exception: they are shared, and each `write`/`writef`/`writeGame` call is
-  atomic against other workers.
+- **Everything in `ctx` is per worker.** `init`, `process` and `finish` each run
+  on their own worker and `ctx.scope` is private to it. A plugin that aggregates
+  over the whole database (a histogram, a dedup table, the cheat screener) has
+  two ways to stay correct at `-j N`:
+  - **`partial`/`reduce`** (preferred). Accumulate into `ctx.scope` as usual,
+    then return that tally from `partial(ctx)`. The runtime lifts each worker's
+    partial out of its Lua state and passes them all to `reduce(partials, ctx)`,
+    which runs once (on worker 1) and emits one report over every game. The
+    partial must be plain data: `nil`/boolean/number/string and tables of those
+    (a function, userdata or an exotic table key is an error). A plugin that
+    defines `reduce` must not also define `finish`.
+  - **a shared `ctx.open` file**, written from every worker (each write is
+    atomic), with a `ctx.worker == 1` guard for any one-off header.
+
+  A plugin that does neither and relies on a per-worker `finish` to aggregate
+  sees only its own worker's games, so run that one at `-j1`.
+- **`ctx.out` and `ctx.open` writers are shared**, and each
+  `write`/`writef`/`writeGame` call is atomic against other workers.
 - **Games are written in completion order**, not input order.
 - **A `"stop"` or `"abort"` stops feeding the pool at once**, but up to N-1 games
   already in flight still run to completion and are emitted. One further game is

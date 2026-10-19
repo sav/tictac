@@ -13,6 +13,7 @@
 #include <array>
 #include <charconv>
 #include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <exception>
 #include <filesystem>
@@ -26,7 +27,9 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <type_traits>
 #include <utility>
+#include <variant>
 
 namespace tictac {
 
@@ -281,10 +284,12 @@ Pipeline::Pipeline(
     RunOptions const &opts,
     std::shared_ptr<Writer> out,
     WriterRegistry &writers,
+    EnginePool &engines,
     std::size_t worker,
     std::size_t workers
 )
-    : opts_(opts), out_(std::move(out)), writers_(writers), worker_(worker), workers_(workers) {
+    : opts_(opts), out_(std::move(out)), writers_(writers), engines_(engines), worker_(worker),
+      workers_(workers) {
     // clang-format off
     lua_.open_libraries(
 		sol::lib::base,
@@ -299,6 +304,76 @@ Pipeline::Pipeline(
     registerTypes();
     loadPlugins();
 }
+
+namespace {
+namespace detail {
+
+// Lift a Lua value out of its state into a plain-C++ ValueTree so reduce() can
+// rebuild it in another state. Only data survives: a function/userdata/thread
+// (or an exotic table key) is an error, keeping a partial() honest.
+ValueTree toValueTree(sol::object const &o) {
+    switch (o.get_type()) {
+    case sol::type::none:
+    case sol::type::lua_nil:
+        return ValueTree{std::monostate{}};
+    case sol::type::boolean:
+        return ValueTree{o.as<bool>()};
+    case sol::type::number: {
+        double const d = o.as<double>();
+        // Keep whole numbers (counts, ids, ply) as integers; reals stay double.
+        if (std::floor(d) == d && std::abs(d) < 9.0e15)
+            return ValueTree{static_cast<std::int64_t>(d)};
+        return ValueTree{d};
+    }
+    case sol::type::string:
+        return ValueTree{o.as<std::string>()};
+    case sol::type::table: {
+        ValueTree::Table entries;
+        for (auto const &kv : o.as<sol::table>()) {
+            ValueTree::Entry e;
+            if (kv.first.get_type() == sol::type::number)
+                e.key = static_cast<std::int64_t>(kv.first.as<double>());
+            else if (kv.first.get_type() == sol::type::string)
+                e.key = kv.first.as<std::string>();
+            else
+                throw std::runtime_error("partial() table key must be a string or integer");
+            e.value = toValueTree(kv.second);
+            entries.push_back(std::move(e));
+        }
+        return ValueTree{std::move(entries)};
+    }
+    default:
+        throw std::runtime_error("partial() must return only nil/boolean/number/string/table");
+    }
+}
+
+// Rebuild a ValueTree as a Lua value in `lua`.
+sol::object fromValueTree(sol::state_view lua, ValueTree const &t) {
+    return std::visit(
+        [&](auto const &v) -> sol::object {
+            using T = std::decay_t<decltype(v)>;
+            if constexpr (std::is_same_v<T, std::monostate>) {
+                return sol::make_object(lua, sol::lua_nil);
+            } else if constexpr (std::is_same_v<T, ValueTree::Table>) {
+                sol::table tbl = lua.create_table();
+                for (auto const &e : v) {
+                    sol::object val = fromValueTree(lua, e.value);
+                    if (std::holds_alternative<std::int64_t>(e.key))
+                        tbl[std::get<std::int64_t>(e.key)] = val;
+                    else
+                        tbl[std::get<std::string>(e.key)] = val;
+                }
+                return tbl;
+            } else {
+                return sol::make_object(lua, v);
+            }
+        },
+        t.value
+    );
+}
+
+} // namespace detail
+} // namespace
 
 bool Pipeline::init() {
     for (auto &plugin : plugins_) {
@@ -315,24 +390,53 @@ bool Pipeline::init() {
     return true;
 }
 
-void Pipeline::finish() {
-    // Call finish() in pipeline order. Unlike init(), a failure is only reported:
-    // the games are already emitted, and one bad plugin must not skip the rest.
-    for (auto &plugin : plugins_) {
-        sol::optional<sol::protected_function> finish = plugin->table["finish"];
-        if (!finish) continue;
-        sol::protected_function_result r = (*finish)(plugin->ctx);
-        if (!r.valid()) {
-            sol::error err = r;
-            std::println(stderr, "error: finish of '{}': {}", plugin->name, err.what());
-        }
+bool Pipeline::hasReduce(std::size_t j) const {
+    return plugins_[j]->table["reduce"].get_type() == sol::type::function;
+}
+
+void Pipeline::finishSlot(std::size_t j) {
+    // Unlike init(), a failure here is only reported: the games are already
+    // emitted, and one bad plugin must not skip the rest.
+    auto &plugin = *plugins_[j];
+    sol::optional<sol::protected_function> finish = plugin.table["finish"];
+    if (!finish) return;
+    sol::protected_function_result r = (*finish)(plugin.ctx);
+    if (!r.valid()) {
+        sol::error err = r;
+        std::println(stderr, "error: finish of '{}': {}", plugin.name, err.what());
     }
 }
 
-void Pipeline::closeEngines() {
-    // ~Engine quits and reaps each subprocess once its last reference (the
-    // Lua-held copy included) is gone.
-    for (auto &plugin : plugins_) plugin->engines.clear();
+ValueTree Pipeline::partial(std::size_t j) {
+    auto &plugin = *plugins_[j];
+    sol::optional<sol::protected_function> fn = plugin.table["partial"];
+    if (!fn) return ValueTree{std::monostate{}};
+    sol::protected_function_result r = (*fn)(plugin.ctx);
+    if (!r.valid()) {
+        sol::error err = r;
+        std::println(stderr, "error: partial of '{}': {}", plugin.name, err.what());
+        return ValueTree{std::monostate{}};
+    }
+    try {
+        return detail::toValueTree(r.get<sol::object>());
+    } catch (std::exception const &e) {
+        std::println(stderr, "error: partial of '{}': {}", plugin.name, e.what());
+        return ValueTree{std::monostate{}};
+    }
+}
+
+void Pipeline::reduce(std::size_t j, std::vector<ValueTree> const &partials) {
+    auto &plugin = *plugins_[j];
+    sol::state_view lua = lua_;
+    sol::table arr = lua.create_table(static_cast<int>(partials.size()), 0);
+    for (std::size_t i = 0; i < partials.size(); ++i)
+        arr[i + 1] = detail::fromValueTree(lua, partials[i]);
+    sol::protected_function fn = plugin.table["reduce"];
+    sol::protected_function_result r = fn(arr, plugin.ctx);
+    if (!r.valid()) {
+        sol::error err = r;
+        std::println(stderr, "error: reduce of '{}': {}", plugin.name, err.what());
+    }
 }
 
 namespace {
@@ -565,22 +669,41 @@ void registerWriter(sol::state_view lua) {
 }
 
 void registerEngine(sol::state_view lua) {
-    lua.new_usertype<Engine>(
+    // The usertype is a handle into the shared EnginePool, not a process: each
+    // call borrows an engine for its duration and returns it, so the pool caps
+    // how many run at once regardless of how many workers call concurrently.
+    lua.new_usertype<EngineHandle>(
         "Engine", sol::no_constructor,
-        "setOption", [](Engine &e, std::string const &name, sol::object value) {
-            e.setOption(name, uciOptionValue(value));
+        "setOption", [](EngineHandle &h, std::string const &name, sol::object value) {
+            // Options are part of the pool signature, so this takes effect on
+            // engines borrowed afterward (created on demand with the new set).
+            h.options[name] = uciOptionValue(value);
         },
-        "analyse", [](Engine &e, LuaBoard &b, sol::table limits, sol::this_state ts) {
+        "analyse", [](EngineHandle &h, LuaBoard &b, sol::table limits, sol::this_state ts) {
             sol::state_view l(ts);
-            return analysisToTable(l, e.analyse(b.board.getFen(), readLimits(limits)));
+            EngineLease lease = h.pool->borrow(h.path, h.options);
+            return analysisToTable(l, lease->analyse(b.board.getFen(), readLimits(limits)));
         },
-        "bestmove", [](Engine &e, LuaBoard &b, sol::table limits) {
-            return e.analyse(b.board.getFen(), readLimits(limits)).bestmove;
+        "policy", [](EngineHandle &h, LuaBoard &b, sol::optional<sol::table> limits, sol::this_state ts) {
+            // Root policy priors as { [uci] = prob }. Empty for an engine that
+            // does not emit them (e.g. Stockfish); meant for an lc0/Maia net.
+            sol::state_view l(ts);
+            AnalysisLimits lim;
+            if (limits) lim = readLimits(*limits);
+            EngineLease lease = h.pool->borrow(h.path, h.options);
+            sol::table t = l.create_table();
+            for (auto const &mp : lease->policy(b.board.getFen(), lim)) t[mp.move] = mp.prior;
+            return t;
         },
-        "cp", [](Engine &e, LuaBoard &b, sol::table limits) -> double {
+        "bestmove", [](EngineHandle &h, LuaBoard &b, sol::table limits) {
+            EngineLease lease = h.pool->borrow(h.path, h.options);
+            return lease->analyse(b.board.getFen(), readLimits(limits)).bestmove;
+        },
+        "cp", [](EngineHandle &h, LuaBoard &b, sol::table limits) -> double {
             // UCI scores are side-to-move relative; report them White-positive,
             // with mate flattened to a sentinel that orders past any centipawn.
-            Analysis a = e.analyse(b.board.getFen(), readLimits(limits));
+            EngineLease lease = h.pool->borrow(h.path, h.options);
+            Analysis a = lease->analyse(b.board.getFen(), readLimits(limits));
             double cp = 0.0;
             if (a.mate) cp = (*a.mate >= 0 ? 1.0 : -1.0) * 100000.0;
             else cp = a.score.value_or(0.0);
@@ -705,7 +828,6 @@ void Pipeline::loadPlugins() {
 }
 
 sol::table Pipeline::buildCtx(PluginInstance &plugin) {
-    PluginInstance *self = &plugin;
     sol::state_view lua = lua_;
     sol::table ctx = lua.create_table();
 
@@ -716,16 +838,16 @@ sol::table Pipeline::buildCtx(PluginInstance &plugin) {
     // output file can emit a one-off header from worker 1 alone.
     ctx["worker"] = worker_;
     ctx["workers"] = workers_;
-    ctx["engine"] = [self](std::string const &path, sol::optional<sol::table> opts) {
-        auto it = self->engines.find(path);
-        if (it != self->engines.end()) return it->second;
+    ctx["engine"] = [pool = &engines_](std::string const &path, sol::optional<sol::table> opts) {
         std::unordered_map<std::string, std::string> options;
-        if (opts) {
+        if (opts)
             for (auto &kv : *opts) options[kv.first.as<std::string>()] = detail::uciOptionValue(kv.second);
-        }
-        auto eng = std::make_shared<Engine>(path, options);
-        self->engines[path] = eng;
-        return eng;
+        EngineHandle handle{pool, path, std::move(options)};
+        // Create and warm one process now, so a bad binary or a failed handshake
+        // surfaces here (at ctx.engine, usually in init) rather than deep in the
+        // first analyse. The lease drops immediately, returning it to the pool.
+        (void)pool->borrow(handle.path, handle.options);
+        return handle;
     };
     ctx["open"] = [registry = &writers_](std::string const &path, sol::optional<std::string> mode) {
         // Reject anything but "w"/"a": silently truncating on a mode typo would
@@ -1023,7 +1145,8 @@ void rejectOutputOverInput(RunOptions const &opts) {
 
 } // namespace
 
-Runtime::Runtime(RunOptions opts) : opts_(std::move(opts)) {
+Runtime::Runtime(RunOptions opts)
+    : opts_(std::move(opts)), engines_(opts_.engines != 0 ? opts_.engines : opts_.jobs) {
     detail::rejectOutputOverInput(opts_);
     if (!opts_.noOutput) {
         out_ = opts_.output == "-" ? std::make_shared<Writer>() : std::make_shared<Writer>(opts_.output);
@@ -1036,7 +1159,9 @@ Runtime::Runtime(RunOptions opts) : opts_(std::move(opts)) {
     // several threads at once would race.
     pipelines_.reserve(opts_.jobs);
     for (std::size_t i = 0; i < opts_.jobs; ++i)
-        pipelines_.push_back(std::make_unique<Pipeline>(opts_, out_, writers_, i + 1, opts_.jobs));
+        pipelines_.push_back(
+            std::make_unique<Pipeline>(opts_, out_, writers_, engines_, i + 1, opts_.jobs)
+        );
 }
 
 int Runtime::run() {
@@ -1069,8 +1194,22 @@ int Runtime::run() {
     // unwind straight out of run(), so the finish hooks never ran.
     if (std::exception_ptr const err = pool.error()) std::rethrow_exception(err);
 
-    for (auto &pipeline : pipelines_) pipeline->finish();
-    for (auto &pipeline : pipelines_) pipeline->closeEngines();
+    // Finish runs slot by slot across all pipelines. A plugin that defines
+    // reduce() aggregates across workers: its per-worker partials are lifted
+    // out of each state and folded once, on pipeline 0. A plain finish() plugin
+    // runs per worker, as before. At -j1 both reduce to the old single pass.
+    std::size_t const slots = pipelines_.empty() ? 0 : pipelines_[0]->pluginCount();
+    for (std::size_t j = 0; j < slots; ++j) {
+        if (pipelines_[0]->hasReduce(j)) {
+            std::vector<ValueTree> partials;
+            partials.reserve(pipelines_.size());
+            for (auto &pipeline : pipelines_) partials.push_back(pipeline->partial(j));
+            pipelines_[0]->reduce(j, partials);
+        } else {
+            for (auto &pipeline : pipelines_) pipeline->finishSlot(j);
+        }
+    }
+    // Engines quit and reap when the pool is destroyed after the pipelines.
     return 0;
 }
 

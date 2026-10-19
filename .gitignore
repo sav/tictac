@@ -1,3 +1,6 @@
 build/
+build-tsan/
 .claude
-
+contrib/
+out.txt
+run.sh
